@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abl1-dragon"
+version = "0.4.0"
+description = "BCR::ABL1 variant review for Windows"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.15"
+dependencies = ["PyQt6>=6.7,<7", "openpyxl>=3.1,<4"]
+
+[project.optional-dependencies]
+igv = ["PyQt6-WebEngine>=6.7,<7"]
+dev = ["PyInstaller>=6.20,<7"]
+
+[project.scripts]
+abl1-dragon = "abl1_workstation.__main__:main"
+abl1-tolkning = "abl1_workstation.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/Christian-Bjornstad/abl1-dragon"
+
+[tool.setuptools.packages.find]
+where = ["src"]

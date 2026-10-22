@@ -1,0 +1,12 @@
+include LICENSE README.md requirements-desktop.txt start_abl1.py start_python_felles.py install_python_felles.py
+include *.cmd
+recursive-include packaging *.py *.cmd *.md
+include assets/brand/abl1-dragon.png assets/brand/abl1-dragon.ico
+include desktop/data/pilot.json
+include engine/analyze.py engine/read_evidence.py engine/reference.json engine/requirements-read-evidence.txt
+include app/data/knowledge.json app/data/igv-manifest.json
+recursive-include docs *.md
+include docs/images/workspace.png
+recursive-include scripts *.py
+recursive-include tests *.py
+global-exclude *.py[cod]

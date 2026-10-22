@@ -1,0 +1,2 @@
+# Optional backend only. Core VCF/QC engine uses the Python standard library.
+pysam==0.24.1

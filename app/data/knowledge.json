@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0",
+  "providers": [
+    {
+      "id": "clinvar",
+      "name": "ClinVar",
+      "status": "lenke",
+      "access": "Offentlig nettside; intet evidenssnapshot følger demoen",
+      "description": "Offentlig ClinVar-lenke. Ingen databaseklassifikasjoner følger den offentlige demoen.",
+      "home": "https://www.ncbi.nlm.nih.gov/clinvar/",
+      "queryTemplate": "https://www.ncbi.nlm.nih.gov/clinvar/?term={chrom}%3A{pos}%3A{ref}%3A{alt}%28GRCh37%29",
+      "queryKind": "exact",
+      "assembly": "GRCh37",
+      "documentation": "https://www.ncbi.nlm.nih.gov/clinvar/docs/maintenance_use/"
+    },
+    {
+      "id": "franklin",
+      "name": "Franklin",
+      "status": "krever tilgang",
+      "access": "Premium-API og avklart organisasjonstilgang",
+      "description": "Åpner Franklin. Søk med varianten og riktig referansebygg. Community, interne data og algoritmer er ikke hentet i piloten.",
+      "home": "https://franklin.genoox.com/clinical-db/home",
+      "queryTemplate": "https://franklin.genoox.com/clinical-db/home",
+      "queryKind": "home",
+      "queryTextTemplate": "chr{chrom}-{pos}-{ref}-{alt} (GRCh37)",
+      "documentation": "https://help.genoox.com/en/articles/11745133-access-control-and-authentication"
+    },
+    {
+      "id": "oncokb",
+      "name": "OncoKB",
+      "status": "krever tilgang",
+      "access": "API krever lisens og token; nettoppslag åpnes manuelt",
+      "description": "Somatisk evidens. Åpner genside; velg riktig proteinvariant og sykdomskontekst. Ingen API-data importert.",
+      "home": "https://www.oncokb.org/",
+      "queryTemplate": "https://www.oncokb.org/gene/{gene}",
+      "queryKind": "gene",
+      "documentation": "https://api.oncokb.org/oncokb-website/api"
+    },
+    {
+      "id": "cosmic",
+      "name": "COSMIC",
+      "status": "krever tilgang",
+      "access": "Lisens og registrering må avklares for lokal bruk/nedlasting",
+      "description": "Søk på gen og proteinendring. Søket er ikke bevis for eksakt alleltreff.",
+      "home": "https://cancer.sanger.ac.uk/cosmic/",
+      "queryTemplate": "https://cancer.sanger.ac.uk/cosmic/search?q={gene}%20{protein}",
+      "queryKind": "search",
+      "documentation": "https://www.sanger.ac.uk/tool/cosmic/"
+    },
+    {
+      "id": "mtbp",
+      "name": "MTBP",
+      "status": "krever tilgang",
+      "access": "Offentlig portal er bare for akademisk forskning; avklar avtale for klinisk tjeneste",
+      "description": "Åpner portalen. Ingen data sendes automatisk. Offentlig portal er ikke en klinisk rapportintegrasjon.",
+      "home": "https://mtbp.org/",
+      "queryTemplate": "https://mtbp.org/analyse/",
+      "queryKind": "home",
+      "documentation": "https://mtbp.org/"
+    },
+    {
+      "id": "gnomad",
+      "name": "gnomAD",
+      "status": "lenke",
+      "access": "Offentlig variantvisning; intet frekvenssnapshot hentet",
+      "description": "GRCh37 kobles til gnomAD v2.1.1. Populasjonsfrekvens avgjør ikke resistens eller teknisk kvalitet.",
+      "home": "https://gnomad.broadinstitute.org/",
+      "queryTemplate": "https://gnomad.broadinstitute.org/variant/{chrom}-{pos}-{ref}-{alt}?dataset=gnomad_r2_1",
+      "queryKind": "exact",
+      "assembly": "GRCh37",
+      "documentation": "https://gnomad.broadinstitute.org/help"
+    },
+    {
+      "id": "civic",
+      "name": "CIViC",
+      "status": "lenke",
+      "access": "Offentlig kunnskapsbase; intet evidenssnapshot hentet",
+      "description": "Åpner genside via dokumentert navnekobling. Velg proteinvariant og kontroller fusjons-/molekylærprofil, evidensnivå og sykdomskontekst.",
+      "home": "https://civicdb.org/",
+      "queryTemplate": "https://civicdb.org/links/entrez_name/{gene}",
+      "queryKind": "gene",
+      "documentation": "https://docs.civicdb.org/en/latest/api/v2/linking.html"
+    },
+    {
+      "id": "dbsnp",
+      "name": "dbSNP",
+      "status": "lenke",
+      "access": "Offentlig NCBI-søk",
+      "description": "Identifikatorer og allelrepresentasjon; et rs-nummer er ingen klinisk klassifikasjon.",
+      "home": "https://www.ncbi.nlm.nih.gov/snp/",
+      "queryTemplate": "https://www.ncbi.nlm.nih.gov/snp/?term={gene}%20{cdna}",
+      "queryKind": "search",
+      "documentation": "https://www.ncbi.nlm.nih.gov/snp/docs/entrez_help/"
+    },
+    {
+      "id": "pubmed",
+      "name": "PubMed",
+      "status": "lenke",
+      "access": "Offentlig litteratursøk",
+      "description": "Søk på gen og proteinendring. Artikler må vurderes mot sykdom, metode og haplotype.",
+      "home": "https://pubmed.ncbi.nlm.nih.gov/",
+      "queryTemplate": "https://pubmed.ncbi.nlm.nih.gov/?term={gene}%20{protein}",
+      "queryKind": "search",
+      "documentation": "https://pubmed.ncbi.nlm.nih.gov/help/"
+    },
+    {
+      "id": "uniprot",
+      "name": "UniProt",
+      "status": "lenke",
+      "access": "Offentlig proteinside",
+      "description": "ABL1-protein P00519; kontroller isoformnummerering før sammenligning.",
+      "home": "https://www.uniprot.org/",
+      "queryTemplate": "https://www.uniprot.org/uniprotkb/P00519/entry",
+      "queryKind": "gene",
+      "documentation": "https://www.uniprot.org/help/api"
+    },
+    {
+      "id": "clingen",
+      "name": "ClinGen Allele Registry",
+      "status": "lenke",
+      "access": "Offentlig alleloppslag; ingen identifikator hentet",
+      "description": "Søk med versjonert transkript og cDNA. Identitetsregister, ingen egen behandlingsanbefaling.",
+      "home": "https://reg.clinicalgenome.org/redmine/projects/registry/genboree_registry/landing",
+      "queryTemplate": "https://reg.clinicalgenome.org/redmine/projects/registry/genboree_registry/landing?search=NM_005157.6%3A{cdna}",
+      "queryKind": "search",
+      "documentation": "https://reg.clinicalgenome.org/"
+    },
+    {
+      "id": "omim",
+      "name": "OMIM",
+      "status": "lenke",
+      "access": "Nettvisning; lokal API/nedlasting krever separat avklaring",
+      "description": "ABL1-genoppføring. Gen-sykdomsrelasjon er ikke en somatisk resistensklassifikasjon.",
+      "home": "https://www.omim.org/",
+      "queryTemplate": "https://www.omim.org/entry/189980",
+      "queryKind": "gene",
+      "documentation": "https://www.omim.org/help/api"
+    }
+  ],
+  "evidence": [],
+  "notes": [
+    "Public source release: provider catalogue only. No clinical case evidence or classification snapshot is included.",
+    "Opening a provider does not verify sign-in, license, allele identity, or clinical interpretation."
+  ]
+}
