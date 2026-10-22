@@ -22,7 +22,9 @@ class PublicReadTests(unittest.TestCase):
     def test_local_resource_containment_and_external_network_block(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);asset=root/'demo.html';asset.write_text('<p>Synthetic</p>')
-            self.assertTrue(allowed_url(asset.as_uri(),root));self.assertEqual(secure_asset(root,'demo.html'),asset)
+            self.assertTrue(allowed_url(asset.as_uri(),root))
+            # Windows TEMP may use an 8.3 alias; verify the physical file identity.
+            self.assertTrue(secure_asset(root,'demo.html').samefile(asset))
             self.assertFalse(allowed_url('https://example.org/',root));self.assertIsNone(secure_asset(root,'../outside.html'))
     def test_svg_accepts_static_shapes_and_rejects_active_content(self):
         self.assertTrue(validate_svg(b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="2" height="2"/></svg>'))
