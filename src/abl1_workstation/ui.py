@@ -7,12 +7,12 @@ from html import escape
 import json
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QSignalBlocker, QThread, QTimer, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QIcon, QImage, QPixmap
+from PyQt6.QtCore import QMargins, QObject, QRect, QSignalBlocker, QThread, QTimer, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QCursor, QDesktopServices, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QFileDialog, QFormLayout, QFrame,
+    QAbstractItemView, QApplication, QButtonGroup, QComboBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QLayout, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTableView, QTableWidget,
     QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
 )
@@ -97,6 +97,20 @@ def card(title, body):
     return frame
 
 
+def initial_window_geometry(available, frame_margins=None):
+    """Fit the preferred client area and its native frame on one screen."""
+    margins=frame_margins if frame_margins is not None else QMargins(8,32,8,8)
+    horizontal=margins.left()+margins.right();vertical=margins.top()+margins.bottom()
+    if not available.isValid() or available.width()<=horizontal or available.height()<=vertical:
+        raise ValueError('Skjermens tilgjengelige arbeidsområde er for lite.')
+    padding=min(12,(available.width()-horizontal-1)//2,(available.height()-vertical-1)//2)
+    width=min(1500,available.width()-2*padding-horizontal)
+    height=min(940,available.height()-2*padding-vertical)
+    x=available.x()+(available.width()-width-horizontal)//2+margins.left()
+    y=available.y()+(available.height()-height-vertical)//2+margins.top()
+    return QRect(x,y,width,height)
+
+
 class ImportWorker(QObject):
     finished=pyqtSignal(object)
     failed=pyqtSignal(str)
@@ -120,13 +134,36 @@ class MainWindow(QMainWindow):
         self.thread=None;self.worker=None;self.loading=False;self.attachments=[];self.browser_enabled=browser_enabled
         self.catalogue=json.loads((resource_root()/'app/data/knowledge.json').read_text(encoding='utf-8'))
         self.database_browser=database_browser or EdgeBrowser(self.store.path.parent)
-        self.setWindowTitle('ABL1 Dragon');self.resize(1500,940);self.setMinimumSize(1050,700)
+        self.setWindowTitle('ABL1 Dragon')
+        self._startup_screen=QApplication.screenAt(QCursor.pos()) or self.screen() or QApplication.primaryScreen()
+        self._initial_geometry_pending=True
         brand_icon=resource_root()/'assets/brand/abl1-dragon.png'
         if brand_icon.is_file():self.setWindowIcon(QIcon(str(brand_icon)))
         self._build_ui();self.setStyleSheet(STYLE)
         self.save_timer=QTimer(self);self.save_timer.setSingleShot(True);self.save_timer.setInterval(600)
         self.save_timer.timeout.connect(self._auto_save)
         self._apply_session(session or load_pilot())
+        self._fit_startup_geometry()
+
+    def _fit_startup_geometry(self,actual_frame=False):
+        if self._startup_screen is None:return
+        available=self._startup_screen.availableGeometry()
+        margins=None
+        if actual_frame:
+            frame=self.frameGeometry();client=self.geometry()
+            margins=QMargins(max(0,client.left()-frame.left()),max(0,client.top()-frame.top()),
+                             max(0,frame.right()-client.right()),max(0,frame.bottom()-client.bottom()))
+        geometry=initial_window_geometry(available,margins)
+        # A small display can be narrower than the workspace. Native scrolling
+        # keeps all controls reachable instead of placing the frame off-screen.
+        self.setMinimumSize(min(1050,geometry.width()),min(700,geometry.height()))
+        self.setGeometry(geometry)
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        if self._initial_geometry_pending:
+            self._initial_geometry_pending=False
+            QTimer.singleShot(0,lambda:self._fit_startup_geometry(actual_frame=True))
 
     def _build_ui(self):
         root=QWidget();root.setObjectName('AppRoot');shell=QHBoxLayout(root);shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
@@ -155,7 +192,11 @@ class MainWindow(QMainWindow):
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.setTextVisible(False);self.progress.hide();layout.addWidget(self.progress)
         self.pages=QStackedWidget();self.pages.addWidget(self._overview_page());self.pages.addWidget(self._variants_page())
         self.pages.addWidget(self._reads_page());self.pages.addWidget(self._sources_page());self.pages.addWidget(self._method_page());layout.addWidget(self.pages,1)
-        shell.addWidget(content,1);self.setCentralWidget(root);self.statusBar().showMessage('Klar · endringer lagres lokalt.')
+        shell.addWidget(content,1)
+        shell.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.workspace_scroll=QScrollArea();self.workspace_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.workspace_scroll.setWidgetResizable(True);self.workspace_scroll.setWidget(root)
+        self.setCentralWidget(self.workspace_scroll);self.statusBar().showMessage('Klar · endringer lagres lokalt.')
 
     def _overview_page(self):
         page=QWidget();layout=QVBoxLayout(page);layout.setContentsMargins(0,0,0,0)
