@@ -109,7 +109,7 @@ class PortalBrowserTests(unittest.TestCase):
         context.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True}
         self.assertEqual(browser.status('franklin')['status'],'logged_in')
         browser.close()
-    def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.edge=FakeEdge(self.root)
+    def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name).resolve();self.edge=FakeEdge(self.root)
     def tearDown(self):self.tmp.cleanup()
     def test_login_uses_own_provider_profile_and_does_not_mark_authenticated(self):
         contexts=[]
