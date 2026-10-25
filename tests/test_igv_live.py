@@ -246,6 +246,16 @@ class AlignmentHeaderTests(unittest.TestCase):
 
 
 class NativeViewerTests(unittest.TestCase):
+    def test_active_view_can_use_the_full_content_height(self):
+        from PyQt6.QtWidgets import QWidget
+        widget=LiveIgvWidget(enable_webengine=False);widget.resize(900,600)
+        view=QWidget(widget)
+        widget.layout.insertWidget(1,view,1)
+        widget.empty_space.hide()
+        widget.show();self.app.processEvents()
+        self.assertGreater(view.height(),widget.height()-100)
+        widget.close()
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtWidgets import QApplication

@@ -470,7 +470,8 @@ class LiveIgvWidget(QWidget):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.addLayout(header)
-        self.layout.addStretch(1)
+        self.empty_space=QWidget(self)
+        self.layout.addWidget(self.empty_space,1)
 
     def clear(self):
         self._generation += 1
@@ -480,6 +481,7 @@ class LiveIgvWidget(QWidget):
         self.current_alignment = None
         self.reference_md5 = None
         self.save_image_button.setEnabled(False)
+        self.empty_space.show()
         if self.web_view is not None:
             self.web_view.stop()
             self.web_view.setUrl(QUrl('about:blank'))
@@ -564,6 +566,7 @@ class LiveIgvWidget(QWidget):
         self.server, self.current_alignment = server, alignment
         self.reference_md5 = result[1]
         self.status_label.setText(f'{alignment.sample} · {locus} · hg19 MD5 kontrollert')
+        self.empty_space.hide()
         self.web_view.show()
         self.web_view.setUrl(QUrl(server.url('viewer.html')))
 
@@ -616,6 +619,7 @@ class LiveIgvWidget(QWidget):
         self.web_view.titleChanged.connect(self._title_changed)
         self.web_view.loadFinished.connect(self._load_finished)
         self.layout.insertWidget(1, self.web_view, 1)
+        self.web_view.hide()
         return True
 
     def _title_changed(self, title):
