@@ -141,6 +141,14 @@ class ReferenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_reference(inspect_reference(self.fasta))
 
+    def test_changed_sequence_is_rejected_even_when_filesystem_timestamp_is_unchanged(self):
+        reference=inspect_reference(self.fasta)
+        verify_reference(reference)
+        original=self.fasta.stat()
+        self.fasta.write_bytes(b'>chr9\nACGT\nACGA\n')
+        os.utime(self.fasta,ns=(original.st_atime_ns,original.st_mtime_ns))
+        with self.assertRaises(ValueError):verify_reference(inspect_reference(self.fasta))
+
     def test_wrong_length_missing_index_duplicate_chromosome_and_short_fasta_rejected(self):
         index = Path(str(self.fasta) + '.fai')
         for value in ['chr9\t9\t6\t4\t5\n', 'chr9\t8\t6\t4\t5\n9\t8\t6\t4\t5\n',

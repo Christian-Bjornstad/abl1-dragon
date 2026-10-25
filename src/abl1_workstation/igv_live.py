@@ -26,8 +26,6 @@ from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBox
 HG19_CHR9_LENGTH = 141213431
 HG19_CHR9_MD5 = '3e273117f15e0a400f01055d9f393768'
 _MAX_HEADER = 8 * 1024 * 1024
-_REFERENCE_CACHE: set[tuple] = set()
-_REFERENCE_LOCK = threading.Lock()
 _RESOURCE_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,100}\Z')
 
 
@@ -297,13 +295,9 @@ def inspect_reference(fasta) -> ReferenceInfo:
 
 
 def verify_reference(reference: ReferenceInfo, cancel: threading.Event | None = None) -> str:
-    """Verify the actual chr9 sequence, once per unchanged FASTA/index identity."""
+    """Hash the actual chr9 sequence; filesystem timestamps can miss rewrites."""
     fasta = _File.register(reference.fasta)
     index = _File.register(reference.index)
-    key = (str(fasta.resolved), fasta.identity, str(index.resolved), index.identity, HG19_CHR9_MD5)
-    with _REFERENCE_LOCK:
-        if key in _REFERENCE_CACHE:
-            return HG19_CHR9_MD5
     remaining = ((reference.length - 1) // reference.line_bases * reference.line_width
                  + (reference.length - 1) % reference.line_bases + 1)
     digest, bases = hashlib.md5(), 0
@@ -325,8 +319,6 @@ def verify_reference(reference: ReferenceInfo, cancel: threading.Event | None = 
         raise ValueError('Referansesekvensen på kromosom 9 er ikke hg19/GRCh37 (MD5)')
     with index.open():
         pass
-    with _REFERENCE_LOCK:
-        _REFERENCE_CACHE.add(key)
     return digest.hexdigest()
 
 
