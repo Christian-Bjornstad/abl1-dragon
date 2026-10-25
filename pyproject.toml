@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abl1-dragon"
-version = "0.4.2"
+version = "0.5.0"
 description = "BCR::ABL1 variant review for Windows"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
-dependencies = ["PyQt6>=6.7,<7", "openpyxl>=3.1,<4"]
+dependencies = ["PyQt6>=6.7,<7", "openpyxl>=3.1,<4", "websocket-client>=1.9,<2"]
 
 [project.optional-dependencies]
 igv = ["PyQt6-WebEngine>=6.7,<7"]

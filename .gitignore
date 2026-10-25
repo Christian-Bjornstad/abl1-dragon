@@ -14,6 +14,7 @@ dist/
 *.egg-info/
 .DS_Store
 EdgeProfil/
+PortalProfiler/
 edge-settings.json
 patient-data/
 inputs/
@@ -28,6 +29,7 @@ reports/
 *.fastq*
 *.fq*
 *.fai
+reference/
 *.bai
 *.crai
 *.xlsx

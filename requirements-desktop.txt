@@ -1,4 +1,4 @@
-# Versions used for the Windows pilot build; install into a dedicated environment.
+# Pinned Windows dependencies; install into a dedicated environment.
 PyQt6==6.11.0
 PyQt6-Qt6==6.11.2
 PyQt6-WebEngine==6.11.0
@@ -6,3 +6,4 @@ PyQt6-WebEngine-Qt6==6.11.2
 PyQt6-sip==13.13.0
 openpyxl==3.1.5
 et_xmlfile==2.0.0
+websocket-client==1.9.0
