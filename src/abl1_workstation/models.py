@@ -1,6 +1,7 @@
 """Native, sortable view of original VCF components; flags are exploratory."""
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PyQt6.QtGui import QColor
+from .workflow import category
 
 
 def fmt(value, percent=False):
@@ -23,11 +24,12 @@ def flags(v):
     if v.get('reference_match') is False:values.append('REF-avvik')
     if v.get('normal_transcript_continuation'):values.append('Transkriptfortsettelse')
     if v.get('sample_has_alt') is False:values.append('ALT ikke kalt i GT')
+    if v.get('codon') is not None and v['codon']<=27:values.append('Native ABL1-ekson 1')
     return values
 
 
 class VariantModel(QAbstractTableModel):
-    HEADERS=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein, SNV alene','AF, caller','ALT / DP','FILTER','Kontrollflagg']
+    HEADERS=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein, enkeltallel','AF (%)','ALT / DP','FILTER']
 
     def __init__(self,rows=None,parent=None):
         super().__init__(parent);self.rows=rows or []
@@ -48,7 +50,7 @@ class VariantModel(QAbstractTableModel):
         if role==Qt.ItemDataRole.UserRole:
             return [v.get('sample',''),v.get('pos',0),v.get('ref','')+'>'+v.get('alt',''),v.get('cdna') or '',v.get('protein_snv_alone') or '',v.get('format_af') if v.get('format_af') is not None else -1,v.get('format_dp') if v.get('format_dp') is not None else -1,v.get('filter') or '',','.join(flags(v))][c]
         if role in (Qt.ItemDataRole.DisplayRole,Qt.ItemDataRole.ToolTipRole):
-            return [v.get('sample',''),f"{v.get('chrom')}:{v.get('pos')}",f"{v.get('ref')}>{v.get('alt')}",v.get('cdna') or 'Ikke annotert',v.get('protein_snv_alone') or 'Krever vurdering',fmt(v.get('format_af'),True),f"{v.get('alt_ad') if v.get('alt_ad') is not None else '–'} / {v.get('format_dp') if v.get('format_dp') is not None else '–'}",v.get('filter') or 'Ikke oppgitt',' · '.join(flags(v)) or 'Ingen visningsflagg'][c]
+            return [v.get('sample',''),f"{v.get('chrom')}:{v.get('pos')}",f"{v.get('ref')}>{v.get('alt')}",v.get('cdna') or '–',v.get('protein_snv_alone') or '–',fmt(v.get('format_af'),True),f"{v.get('alt_ad') if v.get('alt_ad') is not None else '–'} / {v.get('format_dp') if v.get('format_dp') is not None else '–'}",v.get('filter') or '–',' · '.join(flags(v)) or '–'][c]
         if role==Qt.ItemDataRole.ForegroundRole and c in (7,8) and flags(v):return QColor('#A15C00')
 
 
@@ -66,6 +68,8 @@ class VariantFilter(QSortFilterProxyModel):
     def filterAcceptsRow(self,row,parent):
         v=self.sourceModel().rows[row]
         if self.sample!='Alle prøver' and v['sample']!=self.sample:return False
+        if self.status in ('PASS + kontroll','PASS + kandidater') and category(v) not in ('PASS','Kontroll'):return False
+        if self.status in ('Kontroll','Kandidater') and category(v)!='Kontroll':return False
         if self.status=='PASS' and v.get('filter')!='PASS':return False
         if self.status=='DRAGEN-filtrerte' and v.get('filter')=='PASS':return False
         if self.status=='Med kontrollflagg' and not flags(v):return False

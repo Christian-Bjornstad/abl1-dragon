@@ -1,11 +1,7 @@
 # ABL1 Dragon
 
 Python-app for gjennomgang av BCR::ABL1-varianter fra DRAGEN amplicon.
-Lilla/grå arbeidsflate med VCF-import, QC, variantnotater, prosjektlagring og Excel-eksport.
-
-Demoen er syntetisk. Appen er en pilot og er ikke klinisk validert.
-
-![Arbeidsflate](docs/images/workspace.png)
+Mappeimport, variantliste, lokal IGV, databaseoppslag og én Excel-fane.
 
 ## Start på Windows
 
@@ -20,19 +16,25 @@ Krever Python 3.12–3.14, 64 bit.
 
 ## Bruk
 
-Importer VCF/VCF.gz, en DRAGEN-mappe med QC eller en analyse-JSON.
-Bekreft GRCh37/hg19. Annotasjon bruker NM_005157.6.
+Velg analysemappe. Appen finner hard-filtered VCF, tilhørende QC og indekserte
+BAM/CRAM-filer. Standardutvalget viser PASS og kodende kontrollkandidater.
+Alle opprinnelige kall finnes under **Alle**.
 
-Velg prøve og variant, kontroller kvalitet og lesningsgrunnlag, og skriv vurdering.
-Lagre prosjekt for videre arbeid eller eksporter Excel. Kildelenker åpnes i egen
-Edge-profil ved klikk; konto og MFA håndteres i nettleseren.
+Velg variant for lokal IGV. GRCh37/hg19 FASTA med .fai velges i
+**Innstillinger** dersom den ikke finnes i analysemappen. Referansen
+kontrolleres mot hg19 chr9 før lesningene vises.
 
+**Søk i databaser** slår opp valgt allel. Kort kildestatus vises under variantlisten. Innstillinger samler kildevalg og
+innlogging. Prøvenavn, VCF og alignments sendes ikke til databasene.
+**Eksporter Excel** lager én fane med det synlige utvalget og oppslagsresultater.
+
+Annotasjon bruker GRCh37/hg19 og NM_005157.6. PASS er caller-status.
+Kontrollkandidater er teknisk sortering uten validert deteksjonsgrense.
 VCF alene dokumenterer ikke fase eller dekning ved negative posisjoner.
-Demoen inneholder ingen alignments eller IGV-bilder. Ny BAM/CRAM-analyse og nye
-IGV-rapporter kjøres foreløpig utenfor GUI-et.
+Appen er ikke klinisk validert. Medfølgende tester og CLI-selvtesten bruker syntetiske data.
 [Metode og avgrensning](docs/METHOD.md).
 
-Prøvefiler, prosjekter, nettleserprofiler og vurderinger skal lagres utenfor repoet.
+Prøvefiler, prosjekter og nettleserprofiler lagres utenfor repoet.
 
 ## Utvikling
 

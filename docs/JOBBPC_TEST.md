@@ -1,7 +1,7 @@
 # Første test på jobb-PC
 
 Pakk ut hele offline-pakken til en fast, skrivbar mappe. Ikke start direkte i ZIP.
-Bruk syntetisk demo til kontrollene nedenfor.
+Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 
 ## Python FELLES
 
@@ -18,14 +18,14 @@ På PC med vanlig Python brukes **Installer ABL1.cmd** og **Start ABL1.cmd**.
 
 ## Kontroller i appen
 
-- Åpne DEMO-A. Det skal vises to av totalt tre variantposter. Ingen QC eller lesninger følger demoen.
-- Skriv et testnotat, lagre prosjekt, lukk appen og åpne prosjektet igjen.
-- Eksporter Excel. Arbeidsboken skal inneholde tre varianter og testnotatet.
-- Under **Kilder og databaser**, kontroller Edge-oppsettet og åpne ønsket kilde.
-  Fullfør eventuell innlogging selv. Et åpnet nettsted bekrefter ikke API- eller lisensavtale.
+- Programmet starter tomt. Velg analysemappen og kontroller prøvenavn og antall kall.
+- Bytt mellom **PASS + kandidater**, **PASS**, **Kandidater** og **Alle**.
+- Velg lokal GRCh37 FASTA i **Innstillinger** ved behov. Kontroller IGV for en prøve med indeks.
+- Velg en variant og bruk **Søk i databaser**. Kontroller at treff og manglende tilgang skilles.
+- Eksporter Excel. Arbeidsboken skal ha én fane med det synlige variantutvalget.
+- Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
 - Kontroller jobbkonto og Microsoft-synk. Edge kan automatisk koble en Windows-konto
   til en ny profilmappe; egen mappe alene bekrefter ikke at synk er avslått.
-- Prøv først egne analysefiler etter at demoens import, lagring og eksport virker.
 
 ## Hvis noe stopper
 

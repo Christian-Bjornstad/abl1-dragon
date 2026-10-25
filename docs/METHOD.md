@@ -1,4 +1,4 @@
-# Metode og offentlig demonstrasjon
+# Metode
 
 Programmet er en teknisk arbeidsflate. Det er ikke en klinisk validert analysemetode. Et VCF PASS-flagg, et databasefunn eller en høy observert fraksjon gir ikke i seg selv et rapporterbart klinisk resultat.
 
@@ -16,6 +16,14 @@ Referansen består av offentlig hg19 chr9-sekvens og RefSeq-nummerering. Ingen k
 
 ## Valgfri lesningsanalyse
 
+GUI-et kan vise nye BAM/CRAM-filer direkte i lokal IGV.js. Filene finnes ved
+mappeimport; @RG-prøvenavn, hg19-header og lokal referansesekvens kontrolleres
+før visning. Referanse, indeks og alignment leveres kun over en begrenset lokal
+127.0.0.1-tjener med tilfeldig token. Ingen referanse lastes automatisk fra nettet.
+Lagre bilde eksporterer et PNG av viseren. Dette beregner ikke fragmentfase.
+
+CLI-et nedenfor kan i tillegg beregne eksplisitt lesningsstøtte og kodonfase:
+
 ```text
 python engine/analyze.py --input /lokal/kjoring --assembly GRCh37 \
   --alignments /lokal/alignments --reference /lokal/referanse/chr9.fa \
@@ -29,6 +37,15 @@ Mapped primære alignments brukes; sekundære, supplementære og QC-fail alignme
 Disse fragmentene er ikke unike opprinnelige molekyler. Kvalitetsgrensene er tekniske følsomhetssjekker, ikke validerte akseptgrenser eller VAF-er. Motoren gjør ingen FASTQ-realignment, UMI-korreksjon, analyse av fusjonskobling, generell indelmodell eller klinisk klassifikasjon. Kliniske konklusjoner krever relevant assaygrunnlag, validering og faglig vurdering.
 
 ## Testgrunnlag
+
+Standardutvalget **PASS + kandidater** er teknisk sortering. En kontrollkandidat
+har kodende annotasjon, samsvarende REF og observerte ALT-reads, men callerens
+opprinnelige FILTER beholdes. REF-avvik, transkriptfortsettelse og øvrige kall
+vises under **Alle**. Ingen AF-grense brukes som validert deteksjonsgrense.
+
+Databaseoppslag krever eksakt bygg/posisjon/REF/ALT. ClinVar-klassifikasjon og
+onkologiske evidensnivåer er ulike akser. Fravær av treff er forskjellig fra
+nettverksfeil og manglende tilgang. Excel beholder kilde og tidspunkt i cellekommentarer.
 
 Offentlige regresjonstester dekker syntetisk demoidentitet, referanse-/byggkontroll, flerallelisk import, manglende felt, manglende fase, prosjektfingeravtrykk, bevaring av nyere lokale vurderinger og formelsikker CSV-/Excel-eksport. Valgfri pysam-test lager sin egen lille BAM; ingen innsendte sekvenseringsfiler brukes.
 

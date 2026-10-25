@@ -33,18 +33,19 @@ def main(argv=None):
     app.setFont(QFont('Segoe UI',10))
     app.setOrganizationName('ABL1Dragon');app.setApplicationName('ABL1Dragon');app.setApplicationVersion(__version__)
     app.setApplicationDisplayName('ABL1 Dragon')
-    from .domain import ReviewStore, export_xlsx, load_inputs, resource_root, save_project
+    from .domain import ReviewStore, load_inputs, load_pilot, resource_root, save_project
+    from .report import export_report
     icon=resource_root()/'assets/brand/abl1-dragon.ico'
     if icon.is_file():app.setWindowIcon(QIcon(str(icon)))
     from .ui import MainWindow
     data_dir=args.data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
     store=ReviewStore(data_dir/'vurderinger.sqlite3')
-    session=load_inputs([args.project],'GRCh37') if args.project else None
+    session=load_inputs([args.project],'GRCh37') if args.project else load_pilot() if args.smoke_test else None
     window=MainWindow(store,browser_enabled=not bool(args.smoke_test),session=session)
     window.show()
     if args.smoke_test:
         app.processEvents()
-        window.select_variant('DEMO-A',133748283);window.detail_tabs.setCurrentIndex(1);app.processEvents()
+        window.select_variant('DEMO-A',133748283);app.processEvents()
         native_check=window.current_variant and window.current_variant['sample']=='DEMO-A'
         webengine=bool(importlib.util.find_spec('PyQt6.QtWebEngineWidgets'))
         if webengine:
@@ -55,17 +56,17 @@ def main(argv=None):
                'phase_rows':len(window.session.data.get('phase_rows',[])),
                'native_demo_selection':bool(native_check),'synthetic_demo':window.session.data.get('metadata',{}).get('synthetic_demo') is True,'webengine_importable':webengine,
                'webengine_rendering_tested':False,
-               'database_provider_count':window.database_panel.providers.count(),
+               'database_provider_count':len(window.settings.providers),
                'edge_profile_launched':False,'database_authentication_tested':False}
         args.smoke_test.parent.mkdir(parents=True,exist_ok=True)
         diagnostic_dir=data_dir/'selvtest';diagnostic_dir.mkdir(parents=True,exist_ok=True)
         project_file=diagnostic_dir/'analyse.abl1.json';save_project(window.session,store,project_file)
         restored=load_inputs([project_file],'GRCh37')
         proof['project_roundtrip']=restored.run_id==window.session.run_id
-        workbook_file=diagnostic_dir/'analyse.xlsx';export_xlsx(window.session,store,workbook_file)
+        workbook_file=diagnostic_dir/'analyse.xlsx';export_report(window.session,window.session.data['variants'],{},workbook_file)
         from openpyxl import load_workbook
         workbook=load_workbook(workbook_file,read_only=True)
-        proof['excel_variant_rows']=workbook['Varianter'].max_row-1;workbook.close()
+        proof['excel_variant_rows']=workbook['Resultater'].max_row-3;proof['excel_single_sheet']=workbook.sheetnames==['Resultater'];workbook.close()
         import gzip
         vcf=diagnostic_dir/'NySample.vcf.gz'
         text='##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNySample\nchr9\t133748283\t.\tC\tT\t.\tPASS\t.\tGT:AF:AD:DP\t0/1:0.25:75,25:100\n'

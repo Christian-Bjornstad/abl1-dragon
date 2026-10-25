@@ -1,15 +1,14 @@
-"""Native public demo checks: invented data and no browser activity."""
+"""Native workflow without automatic demo data or network calls."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from pathlib import Path
-import sys
-import tempfile
-import unittest
-
+import sys,tempfile,unittest
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'src'))
 from PyQt6.QtWidgets import QApplication
-from abl1_workstation.domain import ReviewStore,load_inputs,save_project
+from abl1_workstation.domain import ReviewStore,load_pilot
 from abl1_workstation.ui import MainWindow
+from abl1_workstation.workflow import allele_key
 
 class PublicWindowTests(unittest.TestCase):
     @classmethod
@@ -19,27 +18,34 @@ class PublicWindowTests(unittest.TestCase):
         self.store=ReviewStore(self.folder/'reviews.sqlite');self.window=MainWindow(self.store,browser_enabled=False)
     def tearDown(self):
         self.window.close();self.app.processEvents();self.store.close();self.temp.cleanup()
-    def test_window_has_only_explicit_demo_rows_without_read_ground_truth(self):
-        window=self.window
-        self.assertEqual(window.variant_model.rowCount(),3);self.assertEqual(window.sample_table.rowCount(),2)
-        self.assertIn('Syntetisk',window.overview_notice.text())
-        self.assertEqual(window.session.data['qc'],[]);self.assertEqual(window.session.data['phase_rows'],[]);self.assertEqual(window.session.data['read_rows'],[])
-        window.select_variant('DEMO-A',133748283);self.assertEqual(window.current_variant['protein_snv_alone'],'p.T315I')
-        window.navigate(2)
-        self.assertIsNone(window.read_viewer.report_path);self.assertIsNone(window.read_viewer.web_view);self.assertEqual(window.read_viewer.image_selector.count(),0)
-    def test_source_panel_tracks_selected_demo_allele_without_sending_label(self):
-        window=self.window;window.select_variant('DEMO-A',133748283);window.navigate(3)
-        self.assertEqual(window.source_scope.count(),1)
-        self.assertIn('C>T',window.database_panel.search_text.text());self.assertNotIn('DEMO-',window.database_panel.search_text.text())
-        window.select_variant('DEMO-B',133738330);window.navigate(3)
-        self.assertIn('A>G',window.database_panel.search_text.text());self.assertNotIn('C>T',window.database_panel.search_text.text())
-        self.assertNotIn('DEMO-',window.database_panel.search_text.text())
-    def test_note_and_review_status_survive_project_roundtrip(self):
-        window=self.window;window.select_variant('DEMO-B',133738330)
-        window.note.setPlainText('Synthetic review note');window.reviewer.setText('TEST');window.review_status.setCurrentText('Trenger oppfølging');window.save_review()
-        project=self.folder/'demo.abl1.json';save_project(window.session,self.store,project)
-        restored=load_inputs([project]);self.assertFalse(restored.is_pilot);self.assertEqual(len(restored.pending_reviews),1)
-        window._apply_session(restored);window.select_variant('DEMO-B',133738330)
-        self.assertEqual(window.note.toPlainText(),'Synthetic review note');self.assertEqual(window.review_status.currentText(),'Trenger oppfølging')
+    def test_start_is_empty_and_has_no_review_form(self):
+        w=self.window
+        self.assertIsNone(w.session);self.assertEqual(w.variant_model.rowCount(),0)
+        self.assertFalse(w.excel_button.isEnabled());self.assertFalse(w.lookup_button.isEnabled())
+        self.assertFalse(hasattr(w,'note'));self.assertFalse(hasattr(w,'review_status'))
+        self.assertIsNone(w.read_viewer.web_view)
+        self.assertEqual(len(w.nav_buttons),2)
+        self.assertNotIn('Kontrollflagg',w.variant_model.HEADERS)
+        self.assertFalse(hasattr(w,'run_status'))
+    def test_explicit_session_filters_and_selected_identity_remain_correct(self):
+        w=self.window;w._apply_session(load_pilot())
+        self.assertEqual(w.variant_model.rowCount(),3)
+        w.select_variant('DEMO-A',133748283)
+        self.assertEqual(w.current_variant['protein_snv_alone'],'p.T315I')
+        key=allele_key(w.current_variant)
+        w._lookup_finished((key,[{'provider':'clinvar','status':'found','summary':'Synthetic class'}]))
+        self.assertIn('Treff',w.source_badges['clinvar'].text())
+        self.assertFalse(hasattr(w,'database_table'));self.assertFalse(hasattr(w,'detail_tabs'))
+        w.select_variant('DEMO-B',133738330)
+        self.assertIn('Ikke søkt',w.source_badges['clinvar'].text())
+        self.assertIsNone(w.read_viewer.web_view)
+    def test_empty_filter_clears_variant_and_database_results(self):
+        w=self.window;w._apply_session(load_pilot());w.search.setText('NO MATCH POSSIBLE')
+        self.assertIsNone(w.current_variant);self.assertEqual(w.source_badges,{})
+        self.assertFalse(w.lookup_button.isEnabled())
+    def test_new_run_clears_lookup_results(self):
+        w=self.window;w._apply_session(load_pilot())
+        w.lookup_results['old']=[{'status':'found'}];w._apply_session(load_pilot())
+        self.assertEqual(w.lookup_results,{})
 
 if __name__=='__main__':unittest.main()

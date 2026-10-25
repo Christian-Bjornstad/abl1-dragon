@@ -61,10 +61,10 @@ class WindowGeometryTests(unittest.TestCase):
                 self.assertGreater(scroll.horizontalScrollBar().maximum(),0)
                 scroll.horizontalScrollBar().setValue(scroll.horizontalScrollBar().maximum())
                 self.app.processEvents()
-                button_point=window.excel_button.mapTo(scroll.viewport(),window.excel_button.rect().center())
+                button_point=window.lookup_button.mapTo(scroll.viewport(),window.lookup_button.rect().center())
                 self.assertTrue(scroll.viewport().rect().contains(button_point))
                 scroll.horizontalScrollBar().setValue(0);self.app.processEvents()
-                first_nav=window.nav_buttons[0]
+                first_nav=window.analysis_button
                 nav_point=first_nav.mapTo(scroll.viewport(),first_nav.rect().center())
                 self.assertTrue(scroll.viewport().rect().contains(nav_point))
             finally:window.close();self.app.processEvents()

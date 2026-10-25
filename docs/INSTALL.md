@@ -50,13 +50,21 @@ midlertidig lokal reservebane i konsollen. Kontrollen bruker ikke nettverk eller
 
 ## Edge
 
-Velg kilde under **Kilder og databaser**, og bruk **Åpne / logg inn i Edge**.
-Fullfør innlogging og MFA i Edge. **Kopier søketekst** gir allel, referansebygg
-og transkript for manuelle søk. Nettleserinnlogging aktiverer ingen kilde-API.
+Bruk **Innstillinger** for kildevalg og innlogging. Fullfør innlogging og MFA i Edge.
+Innloggingsstatus kontrolleres mens innstillingssiden er åpen. Et lukket kildevindu
+kan åpnes igjen med samme profil. Ingen innloggingsfelter finnes i appen.
 
-Appen ber om egen profil under arbeidsmappens `EdgeProfil`. Den stopper hvis
+Kontrollert portaloppslag bruker en egen profil per kilde under arbeidsmappens
+`PortalProfiler/<kilde>`. Innloggingen gjøres i disse Edge-vinduene. Appen starter
+sin egen Edge-prosess med en midlertidig kontrollport på `127.0.0.1`, og kobler
+bare til en ny oppstartsmarkør fra den valgte profilen. Vanlige Edge-vinduer og
+profiler brukes ikke. Ved avslutning lukkes bare appens egne portalvinduer.
+
+Appen stopper hvis
 påvist Edge-policy overstyrer profilvalget, eller policykontrollen ikke kan leses.
-Ingen passord eller cookies leses. Profilen skal ikke deles eller legges i Git.
+Policy som blokkerer DevTools-tilgang respekteres. Ingen passord eller cookies
+leses. Profilene skal ikke deles eller legges i Git. Vanlige offentlige
+kildelenker kan fortsatt åpnes manuelt i appens separate `EdgeProfil`.
 
 En egen profilmappe hindrer ikke nødvendigvis Edge i å koble til Windows-kontoen
 eller aktivere Microsoft-synk. Dette ble observert under den manuelle testen.
