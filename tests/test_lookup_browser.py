@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from abl1_workstation.lookup import canonical_identity
-from abl1_workstation.lookup_browser import PortalBrowser, parse_portal_snapshot, login_status, _WebSocketConnection, _EdgeContext, _owned_endpoint, _initial_target
+from abl1_workstation.lookup_browser import PortalBrowser, parse_portal_snapshot, login_status, _WebSocketConnection, _BrowserConnectionClosed, _EdgeContext, _owned_endpoint, _initial_target
 
 V={'assembly':'GRCh37','chrom':'9','pos':133748283,'ref':'C','alt':'T','cdna':'c.944C>T','protein_snv_alone':'p.T315I'}
 
@@ -81,6 +81,135 @@ class FakeEdge:
 
 
 class PortalBrowserTests(unittest.TestCase):
+    def test_opening_second_provider_keeps_first_login_confirmation_when_recheck_is_inconclusive(self):
+        contexts={}
+        class Context:
+            def __init__(self,executable,profile):
+                self.provider=profile.name;self.page={};self.urls=[];self.closed=False;contexts[self.provider]=self
+            def is_alive(self):return True
+            def navigate(self,url):self.urls.append(url)
+            def bring_to_front(self):pass
+            def snapshot(self):return self.page
+            def close(self):self.closed=True
+        browser=PortalBrowser(self.root,edge_browser=self.edge,context_factory=Context)
+        with patch('abl1_workstation.lookup_browser.debugging_policy',return_value=None):
+            browser.open_login('franklin')
+            franklin=contexts['franklin']
+            franklin.page={'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True}
+            confirmed=browser.status('franklin')
+            browser.open_login('oncokb')
+            franklin.page={'url':'https://franklin.genoox.com/clinical-db/home'}
+            result=browser.status('franklin')
+            self.assertEqual(result['status'],'last_confirmed')
+            self.assertEqual(result['confirmed_at'],confirmed['checked_at'])
+            self.assertGreaterEqual(result['checked_at'],result['confirmed_at'])
+            self.assertRegex(result['summary'],r'^Innlogget · sist bekreftet \d\d:\d\d$')
+            previous_urls=list(franklin.urls)
+            browser.open_login('franklin')
+        self.assertEqual(franklin.urls,previous_urls)
+        self.assertEqual(browser.status('oncokb')['status'],'unknown')
+        self.assertFalse(franklin.closed)
+        browser.close()
+
+    def test_explicit_logout_and_unsafe_redirect_clear_previous_confirmation(self):
+        for next_page in ({'url':'https://franklin.genoox.com/login','password_visible':True},
+                          {'url':'https://franklin.genoox.com/logout'},
+                          {'url':'https://evil.invalid/','logout_visible':True},
+                          {'url':'https://[broken'}):
+            with self.subTest(page=next_page):
+                browser=PortalBrowser(self.root,edge_browser=self.edge)
+                context=unittest.mock.Mock();context.is_alive.return_value=True
+                context.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True}
+                browser._contexts['franklin']=context
+                self.assertEqual(browser.status('franklin')['status'],'logged_in')
+                context.snapshot.return_value=next_page
+                self.assertNotIn(browser.status('franklin')['status'],{'logged_in','last_confirmed'})
+                context.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home'}
+                self.assertEqual(browser.status('franklin')['status'],'unknown')
+                browser.close()
+
+    def test_confirmed_closed_window_does_not_carry_login_to_replacement_context(self):
+        browser=PortalBrowser(self.root,edge_browser=self.edge)
+        context=unittest.mock.Mock();context.is_alive.return_value=True
+        context.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True}
+        browser._contexts['franklin']=context
+        self.assertEqual(browser.status('franklin')['status'],'logged_in')
+        context.is_alive.return_value=False
+        self.assertEqual(browser.status('franklin')['status'],'closed')
+        context.close.assert_called_once()
+        replacement=unittest.mock.Mock();replacement.is_alive.return_value=True
+        replacement.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home'}
+        browser._contexts['franklin']=replacement
+        self.assertEqual(browser.status('franklin')['status'],'unknown')
+        browser.close()
+
+    def test_lookup_login_required_clears_previous_login_confirmation(self):
+        browser=PortalBrowser(self.root,edge_browser=self.edge)
+        context=unittest.mock.Mock();context.is_alive.return_value=True
+        context.snapshot.side_effect=[
+            {'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True},
+            {'url':'https://franklin.genoox.com/login','password_visible':True},
+            {'url':'https://franklin.genoox.com/clinical-db/home'}]
+        browser._contexts['franklin']=context
+        with patch('abl1_workstation.lookup_browser.debugging_policy',return_value=None):
+            self.assertEqual(browser.status('franklin')['status'],'logged_in')
+            self.assertEqual(browser.lookup('franklin',V)['status'],'login_required')
+            self.assertEqual(browser.status('franklin')['status'],'unknown')
+        browser.close()
+
+    def test_transient_health_or_snapshot_failure_keeps_context_and_last_confirmation(self):
+        browser=PortalBrowser(self.root,edge_browser=self.edge)
+        context=unittest.mock.Mock();context.is_alive.return_value=True
+        context.snapshot.return_value={'url':'https://franklin.genoox.com/clinical-db/home','logout_visible':True}
+        browser._contexts['franklin']=context
+        confirmed=browser.status('franklin')
+        context.is_alive.return_value=None
+        result=browser.status('franklin')
+        self.assertEqual(result['status'],'last_confirmed')
+        self.assertEqual(result['confirmed_at'],confirmed['checked_at'])
+        context.close.assert_not_called()
+        with patch('abl1_workstation.lookup_browser.debugging_policy',return_value=None):
+            browser.open_login('franklin')
+        context.navigate.assert_not_called()
+        context.close.assert_not_called()
+        context.is_alive.return_value=True;context.snapshot.side_effect=TimeoutError('temporary')
+        self.assertEqual(browser.status('franklin')['status'],'last_confirmed')
+        context.close.assert_not_called()
+        browser.close()
+
+    def test_edge_health_timeout_is_inconclusive_and_missing_owned_target_is_closed(self):
+        context=_EdgeContext.__new__(_EdgeContext)
+        context.profile=self.root/'PortalProfiler/franklin';context._target='original';context._session='session'
+        context._connection=unittest.mock.Mock()
+        context._connection.call.side_effect=TimeoutError('temporary')
+        self.assertIsNone(context.is_alive())
+        context._connection.call.side_effect=None
+        context._connection.call.return_value={'targetInfos':[{'type':'page','targetId':'unrelated','url':'https://evil.invalid/'}]}
+        self.assertIsNone(context.is_alive())
+        context._connection.call.return_value={'targetInfos':[]}
+        self.assertIs(context.is_alive(),False)
+        context._connection.call.side_effect=_BrowserConnectionClosed('closed')
+        self.assertIs(context.is_alive(),False)
+
+    def test_authentication_snapshot_omits_full_page_body(self):
+        context=_EdgeContext.__new__(_EdgeContext);context.evaluate=unittest.mock.Mock(return_value={})
+        context.auth_snapshot()
+        self.assertNotIn('document.body',context.evaluate.call_args.args[0])
+        context.snapshot()
+        self.assertIn('document.body',context.evaluate.call_args.args[0])
+
+    def test_sso_replacement_page_is_recovered_only_from_same_provider_owned_context(self):
+        context=_EdgeContext.__new__(_EdgeContext)
+        context.profile=self.root/'PortalProfiler/franklin';context._target='original';context._session='session'
+        context._connection=unittest.mock.Mock()
+        context._connection.call.side_effect=[{'targetInfos':[
+            {'type':'page','targetId':'other-provider','url':'https://www.oncokb.org/'},
+            {'type':'page','targetId':'replacement','url':'https://franklin.genoox.com/clinical-db/home'}]},
+            {'sessionId':'replacement-session'},{}]
+        self.assertIs(context.is_alive(),True)
+        self.assertEqual(context._target,'replacement')
+        self.assertEqual(context._session,'replacement-session')
+
     def test_closed_portal_window_reopens_with_same_profile_and_fresh_context(self):
         contexts=[]
         class Context:

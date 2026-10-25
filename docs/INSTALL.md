@@ -54,6 +54,11 @@ Bruk **Innstillinger** for kildevalg og innlogging. Fullfør innlogging og MFA i
 Innloggingsstatus kontrolleres mens innstillingssiden er åpen. Et lukket kildevindu
 kan åpnes igjen med samme profil. Ingen innloggingsfelter finnes i appen.
 
+Status lagres separat per database i programøkten. En uklar kontroll beholder
+siste bekreftede innlogging med tidspunkt. Bekreftet utlogging eller lukket
+vindu oppdaterer bare den aktuelle kilden. Midlertidige kontrollfeil lukker ikke
+nettleservinduet.
+
 Kontrollert portaloppslag bruker en egen profil per kilde under arbeidsmappens
 `PortalProfiler/<kilde>`. Innloggingen gjøres i disse Edge-vinduene. Appen starter
 sin egen Edge-prosess med en midlertidig kontrollport på `127.0.0.1`, og kobler

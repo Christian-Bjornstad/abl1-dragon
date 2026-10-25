@@ -35,6 +35,24 @@ class SettingsTests(unittest.TestCase):
 
 
 class SettingsPanelTests(unittest.TestCase):
+    def test_source_statuses_are_independent_and_prior_confirmation_is_identified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            panel=SettingsPanel(Settings(folder),object())
+            first={'status':'logged_in','summary':'Innlogget','checked_at':'2026-10-25T18:00:00Z'}
+            panel._results({'franklin':first})
+            panel._results({'oncokb':dict(first)})
+            self.assertEqual(panel.status_labels['franklin'].text(),'Innlogget')
+            previous={'status':'last_confirmed','summary':'Innlogget · sist bekreftet 19:00',
+                      'confirmed_at':first['checked_at'],'checked_at':'2026-10-25T18:00:06Z'}
+            panel._results({'franklin':previous})
+            self.assertIn('sist bekreftet',panel.status_labels['franklin'].text())
+            self.assertEqual(panel.login_buttons['franklin'].text(),'Åpne')
+            self.assertIn(first['checked_at'],panel.status_labels['franklin'].toolTip())
+            self.assertEqual(panel.status_labels['oncokb'].text(),'Innlogget')
+            panel._results({'franklin':{'status':'logged_out','summary':'Ikke innlogget'}})
+            self.assertEqual(panel.login_buttons['franklin'].text(),'Åpne / logg inn')
+            self.assertEqual(panel.status_labels['oncokb'].text(),'Innlogget');panel.close()
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtWidgets import QApplication

@@ -445,6 +445,7 @@ class _ReferenceSignals(QObject):
 
 class LiveIgvWidget(QWidget):
     """View the selected run's exact alignment, after local reference validation."""
+    message=pyqtSignal(str)
 
     def __init__(self, parent=None, *, enable_webengine=True):
         super().__init__(parent)
@@ -535,6 +536,7 @@ class LiveIgvWidget(QWidget):
         self._pending = None
         if error:
             self.status_label.setText(error)
+            self.message.emit('IGV: '+error)
             return
         from .domain import resource_root
         from .read_view import locus_for_variant
@@ -557,6 +559,7 @@ class LiveIgvWidget(QWidget):
             if 'server' in locals():
                 server.shutdown()
             self.status_label.setText(f'IGV kunne ikke startes: {caught}')
+            self.message.emit('IGV kunne ikke startes.')
             return
         self.server, self.current_alignment = server, alignment
         self.reference_md5 = result[1]
@@ -619,8 +622,11 @@ class LiveIgvWidget(QWidget):
         if self.server is None:
             return
         self.save_image_button.setEnabled(title == 'ABL1_IGV_READY')
+        if title=='ABL1_IGV_READY' and self.current_alignment:
+            self.message.emit('IGV klar for '+str(self.current_alignment.sample)+'.')
         if title.startswith('ABL1_IGV_ERROR'):
             self.status_label.setText('IGV kunne ikke lese alignment-filen. Se feilen i viseren.')
+            self.message.emit('IGV kunne ikke lese alignment-filen.')
 
     def _load_finished(self, success):
         if self.server is not None and not success:

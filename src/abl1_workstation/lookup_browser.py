@@ -31,12 +31,21 @@ PORTAL_HOSTS={'franklin':{'franklin.genoox.com'},'oncokb':{'www.oncokb.org'},
 CLASS_LABELS=r'(?<![A-Za-z])(?:Likely pathogenic|Pathogenic|Likely benign|Benign|Uncertain significance|VUS|Likely oncogenic|Oncogenic|Likely neutral|Neutral|Inconclusive)(?![A-Za-z])'
 
 
+def _provider_page(provider,url):
+    try:
+        _portal_url(url)
+        return urlsplit(url).hostname in PORTAL_HOSTS.get(provider,set())
+    except (TypeError,ValueError):return False
+
+
 def login_status(provider,snapshot):
     """An open window or a saved profile does not prove a current login."""
     result={'status':'unknown','summary':'Innlogging ikke bekreftet','checked_at':datetime.now(timezone.utc).isoformat()}
-    parts=urlsplit(str(snapshot.get('url','')))
-    if parts.scheme!='https' or parts.hostname not in PORTAL_HOSTS.get(provider,set()):return result
-    if snapshot.get('password_visible') or re.search(r'/(?:login|sign-?in|auth)(?:/|$)',parts.path,re.I):
+    url=snapshot.get('url','')
+    if not url:return {**result,'reason':'snapshot_unavailable'}
+    if not _provider_page(provider,url):return {**result,'reason':'unsafe_page'}
+    parts=urlsplit(url)
+    if snapshot.get('password_visible') or re.search(r'/(?:login|sign-?in|auth|log-?out|sign-?out)(?:/|$)',parts.path,re.I):
         return {**result,'status':'logged_out','summary':'Ikke innlogget'}
     if snapshot.get('logout_visible'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
@@ -46,7 +55,7 @@ def login_status(provider,snapshot):
         return {**result,'status':'logged_in','summary':'Innlogget'}
     if snapshot.get('login_visible'):
         return {**result,'status':'logged_out','summary':'Ikke innlogget'}
-    return result
+    return {**result,'reason':'no_auth_markers'}
 
 
 def _labelled_classifications(provider,text):
@@ -171,6 +180,9 @@ def parse_portal_snapshot(provider,variant,snapshot):
             'details':{'portal_excerpt':excerpt[:12],'retrieval':'visible authenticated portal content'}}
 
 
+class _BrowserConnectionClosed(RuntimeError):pass
+
+
 class _WebSocketConnection:
     """CDP connection restricted to the endpoint announced by our own profile."""
     def __init__(self,url,expected_port):
@@ -183,6 +195,7 @@ class _WebSocketConnection:
         import websocket
         self._timeout_error=websocket.WebSocketTimeoutException
         self._connection_error=websocket.WebSocketException
+        self._closed_error=websocket.WebSocketConnectionClosedException
         self._socket=None;self._counter=0;self._lock=threading.Lock()
         transport=socket.create_connection(('127.0.0.1',expected_port),timeout=10)
         try:
@@ -193,18 +206,21 @@ class _WebSocketConnection:
         except BaseException:transport.close();raise
     def call(self,method,params=None,*,session_id=None,timeout=20):
         with self._lock:
-            if self._socket is None:raise RuntimeError('Edge-forbindelsen er lukket.')
+            if self._socket is None:raise _BrowserConnectionClosed('Edge-forbindelsen er lukket.')
             self._counter+=1;identifier=self._counter
             message={'id':identifier,'method':method,'params':params or {}}
             if session_id:message['sessionId']=session_id
-            self._socket.send(json.dumps(message,separators=(',',':')))
+            try:self._socket.send(json.dumps(message,separators=(',',':')))
+            except self._closed_error:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
+            except self._connection_error:raise RuntimeError('Edge-forespørselen kunne ikke sendes.') from None
             deadline=time.monotonic()+timeout
             while time.monotonic()<deadline:
                 self._socket.settimeout(max(.01,deadline-time.monotonic()))
                 try:raw=self._socket.recv()
                 except (TimeoutError,self._timeout_error):raise TimeoutError('Edge svarte ikke innen tidsgrensen.') from None
+                except self._closed_error:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
                 except self._connection_error:raise RuntimeError('Edge-vinduet eller forbindelsen ble lukket.') from None
-                if not raw:raise RuntimeError('Edge-vinduet eller forbindelsen ble lukket.')
+                if not raw:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.')
                 if len(raw)>8*1024*1024:raise RuntimeError('Edge-svaret er for stort.')
                 response=json.loads(raw)
                 if response.get('id')!=identifier:continue
@@ -310,12 +326,17 @@ class _EdgeContext:
     def navigate(self,url):
         _portal_url(url)
         self._connection.call('Page.navigate',{'url':url},session_id=self._session)
-    def snapshot(self):
+    def snapshot(self,*,auth_only=False):
+        text_field='' if auth_only else "text:(document.body?document.body.innerText:'').slice(0,120000),"
         return self.evaluate("""(()=>{
-          const visible=x=>x.getClientRects().length>0;
+          const visible=x=>{
+            const style=getComputedStyle(x),bounds=x.getBoundingClientRect();
+            return style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse'&&
+              Number(style.opacity)>0&&bounds.width>0&&bounds.height>0;
+          };
           const controls=Array.from(document.querySelectorAll('a,button,[role=button],[role=menuitem]')).filter(visible);
           const caption=x=>(x.innerText||x.getAttribute('aria-label')||'').trim();
-          return {url:location.href,text:(document.body?document.body.innerText:'').slice(0,120000),
+          return {url:location.href,"""+text_field+"""
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
             mtbp_form:Array.from(document.querySelectorAll('#variant-input')).some(visible),
@@ -323,12 +344,25 @@ class _EdgeContext:
             login_visible:controls.some(x=>/^(?:log\\s*in|sign\\s*in|login)$/i.test(caption(x)))};
         })()""")
 
+    def auth_snapshot(self):return self.snapshot(auth_only=True)
+
     def is_alive(self):
+        """True/False require a completed target probe; None is inconclusive."""
         if self._connection is None:return False
         try:
             targets=self._connection.call('Target.getTargets',timeout=3).get('targetInfos',[])
-            return any(t.get('targetId')==self._target and t.get('type')=='page' for t in targets)
-        except (OSError,RuntimeError,TimeoutError,ValueError):return False
+            pages=[t for t in targets if isinstance(t,dict) and t.get('type')=='page']
+            if any(t.get('targetId')==self._target for t in pages):return True
+            # SSO can replace the original tab. Only consider provider pages
+            # reported by this app-owned browser connection, never other profiles.
+            replacement=next((t for t in pages if t.get('targetId') and _provider_page(self.profile.name,t.get('url',''))),None)
+            if replacement is None:return None if pages else False
+            session=self._connection.call('Target.attachToTarget',{'targetId':replacement['targetId'],'flatten':True},timeout=3)['sessionId']
+            self._connection.call('Page.enable',session_id=session,timeout=3)
+            self._target=replacement['targetId'];self._session=session
+            return True
+        except _BrowserConnectionClosed:return False
+        except (OSError,RuntimeError,TimeoutError,ValueError):return None
 
     def bring_to_front(self):
         self._connection.call('Page.bringToFront',session_id=self._session,timeout=3)
@@ -360,7 +394,7 @@ class PortalBrowser:
         self.data_dir=Path(data_dir).resolve();self.edge=edge_browser or EdgeBrowser(self.data_dir)
         self.profile_dir=self.data_dir/'PortalProfiler'
         self._context_factory=context_factory or _EdgeContext
-        self._contexts={};self._locks={p:threading.RLock() for p in LOGIN_URLS};self._closed=False
+        self._contexts={};self._confirmations={};self._locks={p:threading.RLock() for p in LOGIN_URLS};self._closed=False
         atexit.register(self.close)
     def diagnostics(self):
         result=dict(self.edge.diagnostics());result['profile_dir']=str(self.profile_dir)
@@ -376,32 +410,58 @@ class PortalBrowser:
         executable=self.edge.executable_path()
         if executable is None:raise RuntimeError('Microsoft Edge ble ikke funnet.')
         existing=self._contexts.get(provider)
-        if existing is not None and hasattr(existing,'is_alive') and not existing.is_alive():self._discard(provider)
+        if existing is not None and hasattr(existing,'is_alive') and existing.is_alive() is False:self._discard(provider)
         if provider not in self._contexts:self._contexts[provider]=self._context_factory(executable,self.profile_dir/provider)
         return self._contexts[provider]
 
     def _discard(self,provider):
+        self._confirmations.pop(provider,None)
         existing=self._contexts.pop(provider,None)
         if existing:
             try:existing.close()
             except (OSError,RuntimeError,TimeoutError):pass
 
+    def _record_status(self,provider,context,result):
+        state=result['status']
+        if state=='logged_in':
+            self._confirmations[provider]=(context,result['checked_at'])
+            return {**result,'confirmed_at':result['checked_at']}
+        if state=='logged_out' or result.get('reason')=='unsafe_page':
+            self._confirmations.pop(provider,None)
+            return result
+        previous=self._confirmations.get(provider)
+        if state=='unknown' and previous and previous[0] is context:
+            confirmed=previous[1]
+            clock=datetime.fromisoformat(confirmed).astimezone().strftime('%H:%M')
+            return {**result,'status':'last_confirmed','summary':'Innlogget · sist bekreftet '+clock,'confirmed_at':confirmed}
+        return result
+
     def status(self,provider):
         if provider not in self._locks:return {'status':'public','summary':'Åpen kilde'}
         with self._locks[provider]:
+            checked=datetime.now(timezone.utc).isoformat()
             context=self._contexts.get(provider)
-            if context is None:return {'status':'closed','summary':'Vindu lukket'}
+            if context is None:
+                self._confirmations.pop(provider,None)
+                return {'status':'closed','summary':'Vindu lukket','checked_at':checked}
             try:
-                if hasattr(context,'is_alive') and not context.is_alive():
-                    self._discard(provider);return {'status':'closed','summary':'Vindu lukket'}
-                return login_status(provider,context.snapshot() or {})
-            except (OSError,RuntimeError,TimeoutError,ValueError):return {'status':'unknown','summary':'Innlogging ikke bekreftet'}
+                alive=context.is_alive() if hasattr(context,'is_alive') else True
+                if alive is False:
+                    self._discard(provider);return {'status':'closed','summary':'Vindu lukket','checked_at':checked}
+                if alive is None:
+                    result={'status':'unknown','summary':'Innlogging ikke bekreftet','reason':'connection_unavailable'}
+                else:
+                    snapshot=context.auth_snapshot() if hasattr(type(context),'auth_snapshot') else context.snapshot()
+                    result=login_status(provider,snapshot or {})
+            except (OSError,RuntimeError,TimeoutError,ValueError):
+                result={'status':'unknown','summary':'Innlogging ikke bekreftet','reason':'snapshot_unavailable'}
+            return self._record_status(provider,context,{**result,'checked_at':checked})
 
     def open_login(self,provider):
         if provider not in LOGIN_URLS:raise ValueError('Kilden har ingen portalinnlogging.')
         with self._locks[provider]:
             context=self._context(provider)
-            if self.status(provider).get('status')!='logged_in':context.navigate(LOGIN_URLS[provider])
+            if self.status(provider).get('status') not in {'logged_in','last_confirmed'}:context.navigate(LOGIN_URLS[provider])
             if hasattr(context,'bring_to_front'):context.bring_to_front()
     def open_url(self,url):
         checked_url(url);host=urlsplit(url).hostname
@@ -424,7 +484,9 @@ class PortalBrowser:
             timeout=min(max(float(settings.get('browser_timeout_seconds',30)),5),90)
             deadline=time.monotonic()+timeout;result=None
             while time.monotonic()<deadline:
-                snapshot=context.snapshot() or {};result=parse_portal_snapshot(provider,variant,snapshot)
+                snapshot=context.snapshot() or {}
+                self._record_status(provider,context,login_status(provider,snapshot))
+                result=parse_portal_snapshot(provider,variant,snapshot)
                 if result['status'] in {'found','not_found','login_required','license_required'}:return result
                 if provider=='cosmic' and hasattr(context,'evaluate'):
                     # Only follow a specific mutation-result link, never a login,
@@ -442,4 +504,5 @@ class PortalBrowser:
                 try:context.close()
                 except (OSError,RuntimeError,TimeoutError):pass
         self._contexts.clear()
+        self._confirmations.clear()
     shutdown=close

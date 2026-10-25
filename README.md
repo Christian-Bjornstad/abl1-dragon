@@ -20,7 +20,8 @@ Velg analysemappe. Appen finner hard-filtered VCF, tilhørende QC og indekserte
 BAM/CRAM-filer. Standardutvalget viser PASS og kodende kontrollkandidater.
 Alle opprinnelige kall finnes under **Alle**.
 
-Velg variant for lokal IGV. GRCh37/hg19 FASTA med .fai velges i
+Velg variant og åpne **IGV** i venstremenyen. Lesningsvisningen bruker hele
+hovedflaten. Analysesiden har en hendelseslogg. GRCh37/hg19 FASTA med .fai velges i
 **Innstillinger** dersom den ikke finnes i analysemappen. Referansen
 kontrolleres mot hg19 chr9 før lesningene vises.
 

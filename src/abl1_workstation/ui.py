@@ -1,9 +1,10 @@
 """Folder → candidates → local IGV and source lookup → one-sheet Excel."""
 from pathlib import Path
+from datetime import datetime
 from PyQt6.QtCore import QMargins,QObject,QSignalBlocker,QThread,QTimer,Qt,pyqtSignal
 from PyQt6.QtGui import QCursor,QIcon,QPixmap
 from PyQt6.QtWidgets import (QAbstractItemView,QApplication,QComboBox,QFileDialog,QHBoxLayout,QFrame,QGridLayout,QStackedWidget,
-    QHeaderView,QLabel,QLayout,QMainWindow,QMessageBox,QProgressBar,QScrollArea,QSplitter,
+    QHeaderView,QLabel,QLayout,QMainWindow,QMessageBox,QPlainTextEdit,QProgressBar,QScrollArea,QSplitter,
     QTableView,QVBoxLayout,QWidget)
 from .domain import ReviewStore,load_inputs,resource_root
 from .models import VariantModel,VariantFilter
@@ -59,9 +60,13 @@ class MainWindow(QMainWindow):
         rail=QFrame();rail.setObjectName('NavigationRail');rail.setFixedWidth(180)
         nav=QVBoxLayout(rail);nav.setContentsMargins(14,24,14,18);nav.setSpacing(10)
         mark=label('','BrandMark');mark.setPixmap(QPixmap(str(resource_root()/'assets/brand/abl1-dragon.png')).scaled(68,68,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
-        nav.addWidget(mark);nav.addWidget(label('ABL1','Brand'));nav.addWidget(label('Dragon','BrandSubtitle'));nav.addSpacing(24)
-        self.analysis_button=button('Analyse',lambda:self.navigate(0));self.settings_button=button('Innstillinger',lambda:self.navigate(1))
-        self.nav_buttons=[self.analysis_button,self.settings_button]
+        brand_title=label('ABL1','Brand');brand_subtitle=label('Dragon','BrandSubtitle')
+        for item in (mark,brand_title,brand_subtitle):
+            item.setAlignment(Qt.AlignmentFlag.AlignCenter);nav.addWidget(item)
+        nav.addSpacing(24)
+        self.analysis_button=button('Analyse',lambda:self.navigate(0));self.igv_button=button('IGV',lambda:self.navigate(1))
+        self.settings_button=button('Innstillinger',lambda:self.navigate(2))
+        self.nav_buttons=[self.analysis_button,self.igv_button,self.settings_button]
         for item in self.nav_buttons:item.setObjectName('SidebarButton');item.setCheckable(True);nav.addWidget(item)
         self.analysis_button.setChecked(True);nav.addStretch()
         self.import_button=button('Velg analysemappe',self.choose_folder)
@@ -91,13 +96,21 @@ class MainWindow(QMainWindow):
         self.variant_table.selectionModel().currentRowChanged.connect(self._selected)
         detail=QWidget();detail_layout=QVBoxLayout(detail);detail_layout.setContentsMargins(0,0,0,0);detail_layout.setSpacing(8)
         selected=QHBoxLayout();self.variant_title=label('Ingen variant valgt','CardTitle');selected.addWidget(self.variant_title,1)
+        self.open_igv_button=button('Åpne IGV',lambda:self.navigate(1));selected.addWidget(self.open_igv_button)
         self.lookup_button=button('Søk i databaser',self.lookup_selected,True);selected.addWidget(self.lookup_button);detail_layout.addLayout(selected)
         self.variant_info=label('','Subtitle');detail_layout.addWidget(self.variant_info)
         self.source_states=QWidget();self.source_layout=QGridLayout(self.source_states);self.source_layout.setContentsMargins(0,0,0,0)
         self.source_badges={};detail_layout.addWidget(self.source_states)
-        self.read_viewer=LiveIgvWidget(enable_webengine=self.browser_enabled);detail_layout.addWidget(self.read_viewer,1)
+        detail_layout.addWidget(label('Logg','CardTitle'))
+        self.event_log=QPlainTextEdit();self.event_log.setReadOnly(True);self.event_log.setMaximumBlockCount(500)
+        self.event_log.setAccessibleName('Hendelseslogg');detail_layout.addWidget(self.event_log,1)
         split=QSplitter(Qt.Orientation.Vertical);split.addWidget(self.variant_table);split.addWidget(detail);split.setSizes([300,440]);page.addWidget(split,1)
         self.pages.addWidget(analysis)
+        igv_page=QWidget();igv_layout=QVBoxLayout(igv_page);igv_layout.setContentsMargins(0,0,0,0)
+        igv_layout.addWidget(label('IGV','PageTitle'));self.igv_title=label('Ingen variant valgt','CardTitle');igv_layout.addWidget(self.igv_title)
+        self.read_viewer=LiveIgvWidget(enable_webengine=self.browser_enabled)
+        self.read_viewer.message.connect(self.log_event);igv_layout.addWidget(self.read_viewer,1)
+        self.pages.addWidget(igv_page)
         self.settings_panel=SettingsPanel(self.settings,self.database_browser)
         self.settings_panel.changed.connect(self._settings_changed)
         self.settings_panel.busyChanged.connect(lambda busy:self._update_actions())
@@ -111,8 +124,13 @@ class MainWindow(QMainWindow):
 
     def navigate(self,index):
         if self.settings_panel.busy:return
+        changed=self.pages.currentIndex()!=index
         self.pages.setCurrentIndex(index)
         for i,item in enumerate(self.nav_buttons):item.setChecked(i==index)
+        if index==1 and changed:self._show_alignment()
+
+    def log_event(self,text):
+        self.event_log.appendPlainText(datetime.now().strftime('%H:%M:%S')+'  '+str(text))
 
     def _settings_changed(self):
         self._render_sources();self._update_actions()
@@ -134,6 +152,8 @@ class MainWindow(QMainWindow):
 
     def _apply_session(self,session,files=None):
         self.read_viewer.clear();self.current_variant=None;self.run_files=files;self.lookup_results={};self.session=session
+        self.navigate(0);self.event_log.clear()
+        self.log_event(f"Analyse lastet: {len(session.data['samples'])} prøver, {len(session.data['variants'])} VCF-kall.")
         self.variant_model.replace(session.data['variants'])
         with QSignalBlocker(self.sample_filter):
             self.sample_filter.clear();self.sample_filter.addItem('Alle prøver')
@@ -167,6 +187,7 @@ class MainWindow(QMainWindow):
 
     def _clear_variant(self):
         self.current_variant=None;self.variant_title.setText('Ingen variant valgt');self.variant_info.clear()
+        self.igv_title.setText('Ingen variant valgt')
         self._render_sources();self.read_viewer.clear();self._update_actions()
 
     def _selected(self,current,previous):
@@ -175,17 +196,23 @@ class MainWindow(QMainWindow):
         v=self.current_variant
         self.variant_title.setText(f"{v['sample']}  ·  {v.get('cdna') or str(v['pos'])}  ·  {v.get('protein_snv_alone') or v['ref']+'>'+v['alt']}")
         self.variant_info.setText(f"{v['chrom']}:{v['pos']} {v['ref']}>{v['alt']}  ·  {v.get('filter') or '–'}")
-        self._render_sources();self._show_alignment();self._update_actions()
+        self.igv_title.setText(self.variant_title.text());self.read_viewer.clear()
+        self._render_sources();self._update_actions()
+        if self.pages.currentIndex()==1:self._show_alignment()
 
     def _show_alignment(self):
         v=self.current_variant
+        if v is None:self.read_viewer.clear();return
         alignment=self.run_files.alignments.get(v['sample']) if self.run_files and v else None
         reference=Path(self.settings.reference) if self.settings.reference else self.run_files.reference_fasta if self.run_files else None
         if alignment:
+            self.log_event('IGV: åpner '+str(v['sample'])+'.')
             try:self.read_viewer.show_alignment(alignment,reference,v)
             except (ValueError,OSError,RuntimeError) as error:
                 self.read_viewer.clear();self.statusBar().showMessage(str(error))
-        else:self.read_viewer.show_alignment(None,reference,v)
+        else:
+            self.read_viewer.show_alignment(None,reference,v)
+            if v:self.log_event('IGV: BAM/CRAM med indeks mangler for '+str(v['sample'])+'.')
 
     def lookup_selected(self):
         if not self.current_variant or self.loading:return
@@ -194,10 +221,13 @@ class MainWindow(QMainWindow):
         modes={p:'browser' for p in ('franklin','oncokb','cosmic','mtbp')}
         def operation():
             return key,LookupService(self.store.path.parent,browser_adapter=self.database_browser).lookup(v,providers,settings={'provider_modes':modes})
-        self._start_task(operation,self._lookup_finished,'Søker i databaser …')
+        self._start_task(operation,self._lookup_finished,f"Søker i databaser: {v['chrom']}:{v['pos']} {v['ref']}>{v['alt']} …")
 
     def _lookup_finished(self,result):
         key,results=result;self.lookup_results[key]=results;self._render_sources()
+        for item in results:
+            state={'found':'treff','not_found':'ingen treff','login_required':'innlogging kreves','license_required':'tilgang kreves','unsupported':'ikke tilgjengelig','error':'feil'}.get(item.get('status'),'ukjent status')
+            self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+': '+state+'.')
 
     def _render_sources(self):
         while self.source_layout.count():
@@ -217,7 +247,7 @@ class MainWindow(QMainWindow):
             badge.setProperty('found',result.get('status')=='found')
             self.source_badges[provider]=badge;self.source_layout.addWidget(badge,i//3,i%3)
 
-    def open_settings(self):self.navigate(1)
+    def open_settings(self):self.navigate(2)
 
     def export_excel_dialog(self):
         if not self.session:return
@@ -229,10 +259,12 @@ class MainWindow(QMainWindow):
                 selection=' · '.join(x for x in (self.sample_filter.currentText(),self.status_filter.currentText(),self.search.text()) if x)
                 export_report(self.session,self.visible_rows(),self.lookup_results,path,providers=self.settings.providers,samples=samples,selection=selection)
                 self.statusBar().showMessage(f'{len(self.visible_rows())} varianter eksportert: '+path)
+                self.log_event(f'{len(self.visible_rows())} varianter eksportert til Excel.')
             except (OSError,ValueError) as error:self._error(str(error))
 
     def _start_task(self,operation,callback,message):
         if self.thread is not None:return
+        self.log_event(message)
         self.loading=True;self.progress.show();self._update_actions();self.statusBar().showMessage(message)
         self.thread=QThread(self);self.worker=Task(operation);self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
@@ -249,10 +281,12 @@ class MainWindow(QMainWindow):
         if not hasattr(self,'excel_button'):return
         busy=self.loading or (hasattr(self,'settings_panel') and self.settings_panel.busy)
         self.import_button.setEnabled(not busy);self.settings_button.setEnabled(not busy);self.analysis_button.setEnabled(not busy)
+        self.igv_button.setEnabled(not busy);self.open_igv_button.setEnabled(self.current_variant is not None and not busy)
         self.excel_button.setEnabled(self.session is not None and not self.loading)
         self.lookup_button.setEnabled(self.current_variant is not None and bool(self.settings.providers) and not self.loading)
 
     def _error(self,message):
+        self.log_event(message)
         self.statusBar().showMessage(message);QMessageBox.warning(self,'ABL1 Dragon',message)
 
     def closeEvent(self,event):

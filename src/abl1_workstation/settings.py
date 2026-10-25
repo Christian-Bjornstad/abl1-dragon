@@ -124,10 +124,13 @@ class SettingsPanel(QWidget):
             if provider not in self.status_labels:continue
             state=result.get('status');item=self.status_labels[provider]
             item.setText(result.get('summary') or 'Ikke kontrollert')
-            item.setToolTip('Kontrollert: '+str(result.get('checked_at','')))
+            tooltip='Kontrollert: '+str(result.get('checked_at',''))
+            if result.get('confirmed_at'):tooltip+='\nInnlogging bekreftet: '+str(result['confirmed_at'])
+            item.setToolTip(tooltip)
             item.setProperty('sourceState',state)
-            item.setStyleSheet('color:#3E6C4C;font-weight:600;' if state=='logged_in' else 'color:#6A6374;')
-            self.login_buttons[provider].setText('Åpne' if state=='logged_in' else 'Åpne / logg inn')
+            color='#3E6C4C' if state=='logged_in' else '#7150A1' if state=='last_confirmed' else '#6A6374'
+            item.setStyleSheet('color:'+color+(' ;font-weight:600;' if state in ('logged_in','last_confirmed') else ';'))
+            self.login_buttons[provider].setText('Åpne' if state in ('logged_in','last_confirmed') else 'Åpne / logg inn')
 
     def _finished(self):
         self.thread.deleteLater();self.thread=None;self.worker=None
