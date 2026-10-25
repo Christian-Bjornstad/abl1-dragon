@@ -16,6 +16,7 @@ Krever Python 3.12–3.14, 64 bit.
 3. Kjør **Start ABL1.cmd**.
 
 [Installasjon, Python FELLES og Edge](docs/INSTALL.md).
+[Første test på jobb-PC](docs/JOBBPC_TEST.md).
 
 ## Bruk
 

@@ -8,8 +8,156 @@ from pathlib import Path
 import platform
 import runpy
 import sys
+import sysconfig
+import tempfile
+import traceback
+from datetime import datetime, timezone
 
 ROOT=Path(__file__).resolve().parents[1]
+
+
+def _runtime_info():
+    bits=64 if sys.maxsize>2**32 else 32
+    tag=sysconfig.get_platform()
+    return {'python_version':list(sys.version_info[:3]),'python_executable':sys.executable,
+            'architecture_bits':bits,'platform':sys.platform,'platform_tag':tag,
+            'implementation':sys.implementation.name,
+            'free_threaded':bool(sysconfig.get_config_var('Py_GIL_DISABLED')),
+            'windows_x64':sys.platform=='win32' and bits==64 and tag=='win-amd64'}
+
+
+def _pip_available():
+    try:return importlib.util.find_spec('pip') is not None
+    except (ImportError,ValueError):return False
+
+
+def _probe_writeability(root):
+    try:
+        with tempfile.TemporaryFile(dir=root):pass
+        return True,None
+    except OSError as error:return False,str(error)
+
+
+def _normal_name(value):
+    return value.lower().replace('_','-').replace('.','-')
+
+
+def _installed_versions(target):
+    return {_normal_name(d.metadata.get('Name','')):d.version
+            for d in metadata.distributions(path=[str(target)])}
+
+
+def _compatible_wheel(path, requirement, runtime):
+    parts=path.stem.split('-')
+    if len(parts) not in (5,6) or _normal_name(parts[0])!=_normal_name(requirement['name']) or parts[1]!=requirement['required']:
+        return False
+    python_tags,abi_tags,platform_tags=(part.split('.') for part in parts[-3:])
+    if not {'any',runtime['platform_tag'].replace('-','_')}.intersection(platform_tags):return False
+    major,minor=runtime['python_version'][:2]
+    for tag in python_tags:
+        if tag in ('py'+str(major),'py'+str(major)+str(minor)) and 'none' in abi_tags:return True
+        if tag=='cp'+str(major)+str(minor) and runtime['implementation']=='cpython' and set(abi_tags).intersection({'none','abi3',tag}):return True
+        if tag.startswith('cp') and tag[2:].isdigit() and len(tag)>3 and 'abi3' in abi_tags:
+            minimum=(int(tag[2]),int(tag[3:]))
+            if runtime['implementation']=='cpython' and major==minimum[0] and minor>=minimum[1]:return True
+    return False
+
+
+def _log_folders(root):
+    return (Path(root)/'work/launcher-logs',Path(tempfile.gettempdir())/'ABL1Dragon/logs')
+
+
+def _write_report(root,report):
+    failure=None
+    for folder in _log_folders(root):
+        temporary=None
+        try:
+            folder.mkdir(parents=True,exist_ok=True)
+            path=folder/'felles-check.json'
+            report['report_path']=str(path.resolve())
+            descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='.felles-check-',suffix='.json')
+            with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
+                json.dump(report,stream,ensure_ascii=False,indent=2);stream.write('\n')
+            os.replace(temporary,path)
+            return
+        except OSError as error:failure=str(error)
+        finally:
+            if temporary is not None:
+                try:Path(temporary).unlink(missing_ok=True)
+                except OSError as error:report.setdefault('cleanup_errors',[]).append(str(error))
+    report['report_path']=None
+    report['report_error']=failure or 'Ingen skrivbar rapportmappe.'
+
+
+def _record_failure(root,action):
+    detail=traceback.format_exc()
+    for folder in _log_folders(root):
+        try:
+            folder.mkdir(parents=True,exist_ok=True)
+            path=folder/'felles.log'
+            with path.open('a',encoding='utf-8') as stream:
+                stream.write('\n'+datetime.now(timezone.utc).isoformat()+' action='+action+'\n'+detail)
+            return path.resolve()
+        except OSError:continue
+    return None
+
+
+def check(root=ROOT):
+    """Inspect local setup only; do not import Qt/pip or start other processes."""
+    root=Path(root).resolve();runtime=_runtime_info();target=package_dir(root)
+    project={};required=[];project_errors=[]
+    try:
+        project,required=requirements(root)
+        expected=(*helpers(root)['RESOURCE_FILES'],'engine/reference.json')
+        project_errors.extend('Ressurs mangler: '+name for name in expected if not (root/name).is_file())
+    except (OSError,ValueError,RuntimeError,KeyError) as error:project_errors.append(str(error))
+    installed={};metadata_error=None
+    try:installed=_installed_versions(target) if target.is_dir() else {}
+    except (OSError,ValueError,TypeError) as error:metadata_error=str(error)
+    missing=[row['name']+'=='+row['required'] for row in required if installed.get(_normal_name(row['name']))!=row['required']]
+    wheels=root/'wheelhouse';wheel_error=None
+    try:wheel_paths=sorted(p for p in wheels.glob('*.whl') if p.is_file())
+    except OSError as error:wheel_paths=[];wheel_error=str(error)
+    available={row['name']:[path.name for path in wheel_paths if _compatible_wheel(path,row,runtime)] for row in required}
+    missing_wheels=[row['name']+'=='+row['required'] for row in required if not available[row['name']]]
+    writable,write_error=_probe_writeability(root)
+    pip_available=_pip_available()
+    loaded_qt=sorted(name for name in sys.modules if name.startswith('PyQt6'))
+    partial=target.with_name(target.name+'.installing').exists()
+    common=list(project_errors)
+    if not runtime['windows_x64']:common.append('Offline-pakken krever Windows med 64-bit x64-Python.')
+    if runtime['implementation']!='cpython':common.append('Bruk CPython 3.12–3.14.')
+    if runtime.get('free_threaded'):common.append('Bruk vanlig CPython; fri-trådet Python støttes ikke av denne offline-pakken.')
+    if loaded_qt:common.append('Qt er lastet. Åpne et nytt Python FELLES-vindu før installasjon eller start.')
+    start_blockers=list(common)
+    if metadata_error:start_blockers.append('Pakkemetadata kunne ikke leses: '+metadata_error)
+    if missing:start_blockers.append('Mangler lokale pakker: '+', '.join(missing))
+    install_blockers=list(common)
+    if not writable:install_blockers.append('Programmappen er ikke skrivbar: '+str(write_error))
+    if not pip_available:install_blockers.append('pip mangler i Python FELLES. Bruk godkjent runtime med pip.')
+    if not wheels.is_dir():install_blockers.append('Pakk ut hele offline-pakken med wheelhouse.')
+    if wheel_error:install_blockers.append('Wheelhouse kunne ikke leses: '+wheel_error)
+    if missing_wheels:install_blockers.append('Mangler kompatible wheels: '+', '.join(missing_wheels))
+    if metadata_error:install_blockers.append('Pakkemetadata kunne ikke leses: '+metadata_error)
+    if partial:install_blockers.append('En tidligere .installing-mappe finnes. Bevar eller flytt den før nytt forsøk.')
+    if target.exists() and missing:install_blockers.append('Eksisterende pakkemappe er ufullstendig eller eldre. Bevar eller flytt den før ny installasjon.')
+    report={'checked_at_utc':datetime.now(timezone.utc).isoformat(),'project':str(root),
+            'application_version':project.get('version'),'requires_python':project.get('requires-python'),
+            **runtime,'package_dir':str(target),'project_writable':writable,'write_error':write_error,
+            'pip_available':pip_available,'wheelhouse':str(wheels),'compatible_wheels':available,
+            'missing_wheels':missing_wheels,'installed_versions':installed,'missing_packages':missing,
+            'loaded_qt_modules':loaded_qt,'partial_install_exists':partial,
+            'ready_for_install':not install_blockers,'ready_for_start':not start_blockers,
+            'install_blockers':install_blockers,'start_blockers':start_blockers,
+            'dependency_imports_tested':False,'gui_started':False,'network_used':False}
+    _write_report(root,report)
+    print('ABL1 Dragon · FELLES-kontroll')
+    print('Python '+'.'.join(map(str,runtime['python_version']))+' · '+str(runtime['architecture_bits'])+' bit · '+runtime['platform_tag'])
+    print('Installasjon: '+('klar' if report['ready_for_install'] else 'ikke klar'))
+    print('Oppstart: '+('klar' if report['ready_for_start'] else 'ikke klar'))
+    for reason in dict.fromkeys(install_blockers+start_blockers):print('- '+reason)
+    print('Rapport: '+str(report['report_path'] or 'kunne ikke lagres'))
+    return report
 
 
 def package_dir(root=ROOT):
@@ -84,6 +232,15 @@ def start(root=ROOT,argv=None):
 
 
 def entry(action,root=ROOT):
-    try:return install(root) if action=='install' else start(root)
+    try:
+        if action=='check':
+            report=check(root)
+            return 0 if report['ready_for_install'] or report['ready_for_start'] else 1
+        if action=='install':return install(root)
+        if action=='start':return start(root)
+        raise ValueError('Ukjent FELLES-handling: '+str(action))
     except Exception as error:
-        print('ABL1 Python FELLES: '+str(error));return 1
+        path=_record_failure(root,str(action))
+        print('ABL1 Python FELLES: '+str(error))
+        print('Feillogg: '+str(path or 'kunne ikke lagres'))
+        return 1

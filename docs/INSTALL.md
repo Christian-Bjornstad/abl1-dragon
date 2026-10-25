@@ -42,6 +42,12 @@ FELLES-flyten bruker samme interpreter og appens `.felles-packages`, uten å end
 globale pakker. Den krever wheelhouse, pip og et nytt FELLES-vindu uten innlastet Qt.
 Ivanti- og organisasjonspolicy må kontrolleres lokalt.
 
+Bruk **Kontroller med Python FELLES.cmd** før installasjon og ved oppstartsfeil.
+Den skiller mellom «klar for installasjon» og «klar for oppstart» og skriver
+`work/launcher-logs/felles-check.json`. Feil fra installasjon/oppstart lagres i
+`work/launcher-logs/felles.log`. Hvis programmappen ikke er skrivbar, vises en
+midlertidig lokal reservebane i konsollen. Kontrollen bruker ikke nettverk eller GUI.
+
 ## Edge
 
 Velg kilde under **Kilder og databaser**, og bruk **Åpne / logg inn i Edge**.
@@ -51,3 +57,9 @@ og transkript for manuelle søk. Nettleserinnlogging aktiverer ingen kilde-API.
 Appen ber om egen profil under arbeidsmappens `EdgeProfil`. Den stopper hvis
 påvist Edge-policy overstyrer profilvalget, eller policykontrollen ikke kan leses.
 Ingen passord eller cookies leses. Profilen skal ikke deles eller legges i Git.
+
+En egen profilmappe hindrer ikke nødvendigvis Edge i å koble til Windows-kontoen
+eller aktivere Microsoft-synk. Dette ble observert under den manuelle testen.
+Kontroller riktig jobbkonto og synk-oppsett med lokal IT før analysearbeid.
+Appen endrer ikke Edge-policy eller konto-/synk-innstillinger.
+[Microsoft om automatisk innlogging](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/implicitsigninenabled).
