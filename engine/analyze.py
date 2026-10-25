@@ -94,6 +94,95 @@ def allele_value(value,definition,alt_index,alt_count):
     if alt_count>1:return None
     return typed(parts[0]) if len(parts)==1 else None
 
+
+def vcf_sample_fallback(filename):
+    name=pathlib.Path(str(filename)).name
+    return re.sub(r'(?:\.hard-filtered)?\.vcf(?:\.gz)?$','',name,flags=re.I) or 'Ukjent'
+
+
+def read_vcf_text(path):
+    path=pathlib.Path(path)
+    if path.name.lower().endswith('.gz'):
+        with gzip.open(path,'rt',encoding='utf-8-sig') as stream:text=stream.read(25*1024*1024+1)
+    else:
+        with path.open('rt',encoding='utf-8-sig') as stream:text=stream.read(25*1024*1024+1)
+    if len(text)>25*1024*1024:raise ValueError('VCF overskrider grensen på 25 MB: '+path.name)
+    return text
+
+
+def vcf_samples(text,filename):
+    headers=[line.split('\t') for line in text.lstrip('\ufeff').splitlines() if line.startswith('#CHROM\t')]
+    if len(headers)!=1:raise ValueError('Krever én #CHROM-header i '+str(filename))
+    header=headers[0]
+    if header[:8]!=['#CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO'] or (len(header)!=8 and (len(header)<10 or header[8]!='FORMAT')):
+        raise ValueError('Ugyldig VCF-header i '+str(filename))
+    names=header[9:] or [vcf_sample_fallback(filename)]
+    if any(not value for value in names) or len(names)!=len(set(names)):raise ValueError('Ugyldige/dupliserte prøvenavn i '+str(filename))
+    return tuple(names)
+
+
+def qc_prefix(file,sample):
+    """Only exact identifiers beside the selected VCF may supply its QC."""
+    file=pathlib.Path(file);prefixes=list(dict.fromkeys((sample,vcf_sample_fallback(file.name))))
+    found=[prefix for prefix in prefixes if any(_local_file(file.parent/(prefix+'.'+suffix),file.parent) for suffix in ('mapping_metrics.csv','target_bed_coverage_metrics.csv','target_bed_somatic_callable_regions.bed'))]
+    if len(found)>1:
+        for suffix in ('mapping_metrics.csv','target_bed_coverage_metrics.csv','target_bed_somatic_callable_regions.bed'):
+            values=[(file.parent/(prefix+'.'+suffix)).read_bytes() for prefix in found if _local_file(file.parent/(prefix+'.'+suffix),file.parent)]
+            if len(set(values))>1:raise ValueError('Motstridende QC-prefikser for '+sample+' ved '+file.name)
+    return found[0] if found else sample
+
+
+def _local_file(path,folder):
+    return path.is_file() and path.resolve().is_relative_to(folder.resolve())
+
+
+def _qc_signature(file,sample):
+    prefix=qc_prefix(file,sample)
+    return {suffix:hashlib.sha256((file.parent/(prefix+'.'+suffix)).read_bytes()).hexdigest()
+            for suffix in ('mapping_metrics.csv','target_bed_coverage_metrics.csv','target_bed_somatic_callable_regions.bed')
+            if _local_file(file.parent/(prefix+'.'+suffix),file.parent)}
+
+
+def select_vcf_paths(input_path):
+    """Select one unambiguous single-sample callset per sample, locally only."""
+    path=pathlib.Path(input_path).resolve()
+    if not path.exists():raise ValueError('Inndata finnes ikke.')
+    base=path if path.is_dir() else path.parent
+    candidates=sorted((p for p in (path.rglob('*') if path.is_dir() else [path]) if p.is_file() and p.name.lower().endswith(('.vcf','.vcf.gz'))),key=lambda p:p.relative_to(base).as_posix().casefold())
+    warnings=[];entries=[]
+    for file in candidates:
+        resolved=file.resolve()
+        if not resolved.is_relative_to(base):
+            warnings.append('Ignorerer VCF utenfor valgt mappe: '+file.name);continue
+        name=file.relative_to(base).as_posix()
+        if re.search(r'(?:\.g|\.gvcf)\.vcf(?:\.gz)?$|\.gvcf(?:\.gz)?$',file.name,re.I):
+            warnings.append('Ignorerer gVCF: '+name);continue
+        text=read_vcf_text(file);samples=vcf_samples(text,file.name)
+        if len(samples)!=1:
+            warnings.append('Ignorerer joint/flerprøve-VCF: '+name);continue
+        if any('<NON_REF>' in line or '<*>' in line or (not line.startswith('#') and len(line.split('\t'))>7 and line.split('\t')[4]=='.' and re.search(r'(?:^|;)END=',line.split('\t')[7])) for line in text.splitlines() if line):
+            warnings.append('Ignorerer gVCF/referanseblokker: '+name);continue
+        entries.append({'path':resolved,'sample':samples[0],'text_hash':hashlib.sha256(text.encode('utf-8')).hexdigest(),'hard':bool(re.search(r'\.hard-filtered\.vcf(?:\.gz)?$',file.name,re.I))})
+    chosen=[]
+    for sample in sorted({row['sample'] for row in entries},key=str.casefold):
+        rows=[row for row in entries if row['sample']==sample]
+        hard=[row for row in rows if row['hard']]
+        if hard:
+            for row in rows:
+                if row not in hard:warnings.append('Bruker hard-filtered VCF for '+sample+'; utelater '+row['path'].relative_to(base).as_posix())
+            rows=hard
+        hashes={row['text_hash'] for row in rows}
+        if len(hashes)!=1:raise ValueError('Flere ulike VCF-kallsett for '+sample+'. Velg én kjøring/fil.')
+        signatures=[_qc_signature(row['path'],sample) for row in rows]
+        for suffix in set().union(*(set(signature) for signature in signatures)):
+            if len({signature[suffix] for signature in signatures if suffix in signature})>1:raise ValueError('Motstridende QC ved duplikat-VCF for '+sample)
+        best=sorted(rows,key=lambda row:(-len(_qc_signature(row['path'],sample)),not row['path'].name.lower().endswith('.gz'),row['path'].relative_to(base).as_posix().casefold()))[0]
+        chosen.append(best['path'])
+        for row in rows:
+            if row is not best:warnings.append('Identisk VCF-duplikat utelatt: '+row['path'].relative_to(base).as_posix())
+    if not chosen:raise ValueError('Ingen entydig enkeltprøve-VCF funnet. '+(' '.join(warnings)))
+    return sorted(chosen,key=lambda p:p.relative_to(base).as_posix().casefold()),warnings
+
 def parse_vcf(text,filename='local.vcf',assembly='GRCh37',reference=None):
     reference=reference or REFERENCE
     check_reference(assembly,reference)
@@ -130,7 +219,7 @@ def parse_vcf(text,filename='local.vcf',assembly='GRCh37',reference=None):
         for part in c[7].split(';'):
             if part!='.':
                 key,sep,value=part.partition('=');info[key]=value if sep else True
-        names=sample_names or [re.sub(r'\.vcf(?:\.gz)?$','',str(filename),flags=re.I) or 'Ukjent']
+        names=sample_names or [vcf_sample_fallback(filename)]
         format_keys=c[8].split(':') if len(c)>8 else []
         for sample_index,sample in enumerate(names):
             values=c[9+sample_index].split(':') if len(c)>9+sample_index else []
@@ -150,16 +239,16 @@ def parse_vcf(text,filename='local.vcf',assembly='GRCh37',reference=None):
                 if len(raw)>200000:raise ValueError('VCF overskrider pilotgrensen på 200 000 variantkomponenter.')
     if not fileformat or not header:raise ValueError('Gyldig VCFv4-fil og #CHROM-header kreves.')
     variants=annotate_variants(raw,assembly,reference)
-    names=sample_names or [re.sub(r'\.vcf(?:\.gz)?$','',str(filename),flags=re.I) or 'Ukjent']
+    names=sample_names or [vcf_sample_fallback(filename)]
     samples=[{'sample':sample,'expected':'Ukjent','expected_cdna':None,'expected_protein':None,'observed_components':[v for v in variants if v['sample']==sample and v['sample_has_alt'] is not False and v['type']=='SNV' and v['filter']=='PASS' and v['protein_snv_alone'] is not None],'status':'Kun VCF: funn krever vurdering; negativitet, dekning og haplotyper er ikke validert','note':''} for sample in names]
     return {'schema_version':1,'mode':'vcf_only','date':None,'transcript':reference['transcript'],'protein':reference['protein'],'genome':'hg19/GRCh37','variants':variants,'samples':samples,'qc':[],'phase_rows':[],'read_rows':[],'intervals':[],'bed':reference['bed'],'sources':[],'metadata':{'assembly':'GRCh37','assembly_confirmation':'Selected by user; no liftover','reference_headers':reference_headers,'transcript':reference['transcript'],'engine_version':VERSION,'clinical_validation':'Not clinically validated'},'provenance':{'source':'Local VCF import; no network or alignment analysis','files':[{'file':filename}]},'totals':{'records':len(variants),'passed':sum(v['filter']=='PASS' for v in variants),'filtered':sum(v['filter']!='PASS' for v in variants),'snv':sum(v['type']=='SNV' for v in variants),'insertions':sum(v['type']=='INS' for v in variants),'deletions':sum(v['type']=='DEL' for v in variants)}}
 
-def parse_qc(folder,sample,variants):
+def parse_qc(folder,sample,variants,prefix=None):
     """Read supplied DRAGEN metrics. Missing metrics remain None; no QC threshold inference."""
-    metrics={};files=[]
+    metrics={};files=[];prefix=prefix or sample
     for suffix in ['mapping_metrics.csv','target_bed_coverage_metrics.csv']:
-        path=folder/f'{sample}.{suffix}'
-        if not path.is_file():continue
+        path=folder/f'{prefix}.{suffix}'
+        if not _local_file(path,folder):continue
         files.append(path)
         for row in csv.reader(path.read_text(encoding='utf-8-sig').splitlines()):
             if len(row)>3 and row[1]=='':metrics[row[2]]=row[3:]
@@ -167,9 +256,9 @@ def parse_qc(folder,sample,variants):
     def metric(name,pct=False):
         values=metrics.get(name,[]);index=1 if pct else 0
         return number(values[index]) if len(values)>index else None
-    callable_path=folder/f'{sample}.target_bed_somatic_callable_regions.bed'
+    callable_path=folder/f'{prefix}.target_bed_somatic_callable_regions.bed'
     callable_bases=None
-    if callable_path.is_file():
+    if _local_file(callable_path,folder):
         files.append(callable_path);intervals={}
         for row in csv.reader(callable_path.read_text(encoding='utf-8-sig').splitlines(),delimiter='\t'):
             if len(row)>=3 and not row[0].startswith('#'):intervals.setdefault(row[0],[]).append((int(row[1]),int(row[2])))
@@ -181,6 +270,7 @@ def parse_qc(folder,sample,variants):
     # The denominator is only used if this run includes the identical research BED.
     target_bases=None
     for bed in folder.glob('*RESEARCH_ONLY.bed'):
+        if not _local_file(bed,folder):continue
         rows=[]
         for line in bed.read_text(encoding='utf-8-sig').splitlines():
             c=line.split('\t')
@@ -194,26 +284,16 @@ def analyze_path(input_path,assembly,alignments=None,reference_fasta=None):
     path=pathlib.Path(input_path).resolve()
     if not path.exists():raise ValueError('Inndata finnes ikke.')
     base=path if path.is_dir() else path.parent
-    candidates=(p for p in (path.rglob('*') if path.is_dir() else [path]) if p.is_file() and p.name.lower().endswith(('.vcf','.vcf.gz')))
-    paths=sorted(candidates,key=lambda p:(not any(p.parent.glob('*.mapping_metrics.csv')),not p.name.lower().endswith('.gz'),str(p)))
-    paths=[p for p in paths if p.name.endswith('.gz') or not p.with_name(p.name+'.gz').is_file()]
-    if not paths:raise ValueError('Ingen .vcf eller .vcf.gz funnet.')
-    results=[];sample_names=set();manifest=[];qc_rows=[];seen_text=set()
+    paths,discovery_warnings=select_vcf_paths(path)
+    results=[];sample_names=set();manifest=[];qc_rows=[]
     for file in paths:
         name=file.relative_to(base).as_posix();raw=file.read_bytes()
-        if file.name.endswith('.gz'):
-            with gzip.open(file,'rt',encoding='utf-8-sig') as stream:text=stream.read(25*1024*1024+1)
-        else:text=raw.decode('utf-8-sig')
-        content_hash=hashlib.sha256(text.encode('utf-8')).hexdigest()
-        if content_hash in seen_text:
-            manifest.append({'file':name,'sha256':hashlib.sha256(raw).hexdigest(),'kind':'duplicate_vcf','note':'Identical decompressed VCF text; not analyzed twice'})
-            continue
-        seen_text.add(content_hash)
+        text=read_vcf_text(file)
         result=parse_vcf(text,name,assembly)
         for sample in result['samples']:
             if sample['sample'] in sample_names:raise ValueError('Samme prøvenavn finnes i flere VCF-filer; fjern duplikater før import.')
             sample_names.add(sample['sample'])
-            qc,files=parse_qc(file.parent,sample['sample'],result['variants'])
+            qc,files=parse_qc(file.parent,sample['sample'],result['variants'],prefix=qc_prefix(file,sample['sample']))
             if qc:qc_rows.append(qc)
             for qfile in files:manifest.append({'file':qfile.relative_to(base).as_posix(),'sha256':hashlib.sha256(qfile.read_bytes()).hexdigest(),'kind':'qc_or_bed'})
         manifest.append({'file':name,'sha256':hashlib.sha256(raw).hexdigest(),'kind':'vcf'})
@@ -221,6 +301,7 @@ def analyze_path(input_path,assembly,alignments=None,reference_fasta=None):
     out=dict(results[0]);out['variants']=[v for result in results for v in result['variants']];out['samples']=[s for result in results for s in result['samples']];out['qc']=qc_rows
     out['mode']='vcf_with_qc' if qc_rows else 'vcf_only'
     out['provenance']={'source':'Local deterministic VCF/QC import; no alignment processing, external queries, or clinical classification','files':manifest,'reference_sha256':hashlib.sha256((ROOT/'reference.json').read_bytes()).hexdigest()}
+    out['metadata']['discovery_warnings']=discovery_warnings
     out['totals']={key:sum(result['totals'].get(key,0) for result in results) for key in ('records','passed','filtered','snv','insertions','deletions')}
     if qc_rows:
         for sample in out['samples']:sample['status']='VCF og eventuelle QC-målinger importert; funn, negativitet og haplotyper krever faglig vurdering'
