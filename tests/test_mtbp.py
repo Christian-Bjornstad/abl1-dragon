@@ -45,6 +45,21 @@ class MtbpTests(unittest.TestCase):
                 self.assertEqual(submit.call_count,1)
             job=next(Path(folder).rglob('mtbp-job.json')).read_text()
             self.assertNotIn('NEVER_SEND',job);self.assertIn('NM_005157.6:c.944C>T',job)
+    def test_uncertain_native_submission_is_not_cancelled_by_report_list_navigation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            browser=Mock();browser.data_dir=Path(folder)
+            with patch('abl1_workstation.mtbp.prepare',return_value=True),patch('abl1_workstation.mtbp.submit'),patch('abl1_workstation.mtbp.wait_acceptance',return_value='unknown'),patch('abl1_workstation.mtbp.find_report') as find:
+                self.assertEqual(lookup_mtbp(browser,V,{})['status'],'pending')
+                find.assert_not_called()
+    def test_positive_transcript_rejection_may_retry_genomic_query_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            import json
+            browser=Mock();browser.data_dir=Path(folder)
+            with patch('abl1_workstation.mtbp.prepare',return_value=True),patch('abl1_workstation.mtbp.submit') as submit,patch('abl1_workstation.mtbp.wait_acceptance',side_effect=['rejected','accepted']),patch('abl1_workstation.mtbp.find_report',return_value=None):
+                self.assertEqual(lookup_mtbp(browser,V,{'mtbp_wait_seconds':0})['status'],'pending')
+                self.assertEqual(submit.call_count,2)
+            job=json.loads(next(Path(folder).rglob('mtbp-job.json')).read_text())
+            self.assertEqual(job['query'],'chr9:g.133748283C>T')
     def test_certain_form_rejection_can_be_retried_without_retaining_false_pending_job(self):
         from abl1_workstation.mtbp import SubmissionNotSent
         with tempfile.TemporaryDirectory() as folder:

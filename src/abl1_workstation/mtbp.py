@@ -111,6 +111,22 @@ def submit(context,job):
     if not accepted:raise SubmissionNotSent('MTBP-skjemaet kunne ikke sendes automatisk. Kontroller vinduet i Edge.')
 
 
+def wait_acceptance(context,job):
+    # Do not navigate away from an in-flight native POST or AJAX submission.
+    for _ in range(40):
+        state=evaluate(context,'mtbp',r"""
+          const input=document.querySelector('#variant-input'),id=document.querySelector('#analysis-id');
+          return {url:location.href,ready:document.readyState,query:input?.value||'',id:id?.value||'',
+                  text:location.pathname.replace(/\/$/,'')==='/analyse'?(document.body?.innerText||'').slice(0,20000):''};""") or {}
+        parts=urlsplit(state.get('url',''))
+        if parts.scheme=='https' and parts.netloc=='mtbp.org':
+            if re.fullmatch(r'/queue/[0-9]+/?',parts.path) or report_url(state['url']):return 'accepted'
+            if (state.get('ready')=='complete' and state.get('id')==job['analysis_id'] and state.get('query')==job['query']
+                    and job['query'] in state.get('text','') and 'cannot be mapped to genomic coordinates' in state.get('text','')):return 'rejected'
+        time.sleep(.5)
+    return 'unknown'
+
+
 def read_report(context):
     return evaluate(context,'mtbp',r"""
       if(!/^\/patients\/[A-Za-z0-9_-]+\/report\/[0-9]+\/?$/.test(location.pathname))return null;
@@ -186,21 +202,34 @@ def lookup_mtbp(browser,variant,settings):
         if not isinstance(job,dict):raise ValueError('Ugyldig MTBP-kvittering.')
         if (not isinstance(job.get('analysis_id'),str) or not re.fullmatch(r'DRAGEN-[0-9a-f]{32}',job['analysis_id'])
                 or canonical_identity(job.get('identity') or {})!=canonical_identity(variant)
-                or job.get('query')!=query or job.get('cancer_type')!='Blood'):raise ValueError('Ugyldig MTBP-variant.')
+                or job.get('query') not in {query,'chr'+genomic_hgvs(variant)} or job.get('cancer_type')!='Blood'):raise ValueError('Ugyldig MTBP-variant.')
+    def pending():
+        return base_result(variant,'pending','MTBP-analysen er ikke ferdig eller innlogging må fullføres. Søk igjen for å hente samme analyse.',
+                           accession=job['query'],details={'analysis_id':job['analysis_id'],'cancer_type':job['cancer_type']})
     if job is None:
         cancer_type=str(settings.get('mtbp_cancer_type') or 'Blood')
         if cancer_type!='Blood':return base_result(variant,'unsupported','Denne MTBP-flyten bruker sykdomskategorien Blood.')
         job={'analysis_id':'DRAGEN-'+uuid.uuid4().hex,'identity':canonical_identity(variant),'query':query,
              'cancer_type':cancer_type,'created_at':datetime.now(timezone.utc).isoformat()}
-        if not prepare(browser,context,job):return base_result(variant,'login_required','Åpne MTBP under Innstillinger og fullfør innlogging/skjemaet i Edge.')
-        # Commit intent before clicking. An uncertain response must never cause
-        # a second submission, even after a process crash or app restart.
-        write_job(path,job)
-        try:submit(context,job)
-        except SubmissionNotSent as error:
-            path.unlink(missing_ok=True)
-            return base_result(variant,'error',str(error))
-        except (OSError,RuntimeError,TimeoutError):pass
+        for attempt in range(2):
+            if not prepare(browser,context,job):return base_result(variant,'login_required','Åpne MTBP under Innstillinger og fullfør innlogging/skjemaet i Edge.')
+            # Commit intent before clicking. An uncertain response must never
+            # cause a second submission, even after a process crash/restart.
+            write_job(path,job)
+            try:
+                submit(context,job);acceptance=wait_acceptance(context,job)
+            except SubmissionNotSent as error:
+                path.unlink(missing_ok=True);return base_result(variant,'error',str(error))
+            except (OSError,RuntimeError,TimeoutError):return pending()
+            if acceptance=='accepted':break
+            if acceptance=='rejected':
+                # Only a positively rejected, exact form may be retried with
+                # genomic HGVS. Never resubmit after an uncertain response.
+                if attempt==0 and job['query']!='chr'+genomic_hgvs(variant):
+                    job['query']='chr'+genomic_hgvs(variant);continue
+                path.unlink(missing_ok=True)
+                return base_result(variant,'error','MTBP kunne ikke kartlegge varianten med transkript eller GRCh37-HGVS.')
+            return pending()
     timeout=min(120,max(0,float(settings.get('mtbp_wait_seconds',20))))
     deadline=time.monotonic()+timeout
     while True:
@@ -214,5 +243,4 @@ def lookup_mtbp(browser,variant,settings):
             return result
         if time.monotonic()>=deadline:break
         time.sleep(2)
-    return base_result(variant,'pending','MTBP-analysen er ikke ferdig eller innlogging må fullføres. Søk igjen for å hente samme analyse.',
-                       accession=job['query'],details={'analysis_id':job['analysis_id'],'cancer_type':job['cancer_type']})
+    return pending()

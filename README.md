@@ -65,6 +65,7 @@ ikke tilstrekkelig. Kildestatus viser om bildet er klart. Etter innlogging eller
 nettleserkontroll: velg varianten og trykk **Hent bilder fra åpne sider**.
 Knappen bruker de åpne databasesidene uten å starte søket på nytt.
 Databaseoppslag krever nett og eventuell konto/tilgang.
+[Kilder og bildeuttak](docs/DATABASES.md).
 Franklin-bilder omfatter tilgjengelige ACMG-/onkogenisitetsvisninger, evidenskort,
 prediksjoner og populasjonsfrekvenser. Manglende delbilder angis i rapporten.
 MTBP sender én variant per analyse med et tilfeldig DRAGEN-ID og sykdomskategorien
