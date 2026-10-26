@@ -1,7 +1,7 @@
 """Native, sortable view of original VCF components; flags are exploratory."""
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PyQt6.QtGui import QColor
-from .workflow import category
+from .workflow import category,row_key
 
 
 def fmt(value, percent=False):
@@ -32,10 +32,23 @@ class VariantModel(QAbstractTableModel):
     HEADERS=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein, enkeltallel','AF (%)','ALT / DP','FILTER']
 
     def __init__(self,rows=None,parent=None):
-        super().__init__(parent);self.rows=rows or []
+        super().__init__(parent);self.rows=rows or [];self.checked=set()
 
     def replace(self,rows):
-        self.beginResetModel();self.rows=rows;self.endResetModel()
+        self.beginResetModel();self.rows=rows;self.checked.clear();self.endResetModel()
+
+    def selected_rows(self):return [v for v in self.rows if row_key(v) in self.checked]
+
+    def flags(self,index):
+        value=super().flags(index)
+        return value|Qt.ItemFlag.ItemIsUserCheckable if index.isValid() and index.column()==0 else value
+
+    def setData(self,index,value,role=Qt.ItemDataRole.EditRole):
+        if not index.isValid() or index.column()!=0 or role!=Qt.ItemDataRole.CheckStateRole:return False
+        key=row_key(self.rows[index.row()])
+        if value in (Qt.CheckState.Checked,Qt.CheckState.Checked.value):self.checked.add(key)
+        else:self.checked.discard(key)
+        self.dataChanged.emit(index,index,[Qt.ItemDataRole.CheckStateRole]);return True
 
     def rowCount(self,parent=QModelIndex()):return 0 if parent.isValid() else len(self.rows)
     def columnCount(self,parent=QModelIndex()):return len(self.HEADERS)
@@ -47,6 +60,8 @@ class VariantModel(QAbstractTableModel):
     def data(self,index,role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():return None
         v=self.rows[index.row()];c=index.column()
+        if role==Qt.ItemDataRole.CheckStateRole and c==0:
+            return Qt.CheckState.Checked if row_key(v) in self.checked else Qt.CheckState.Unchecked
         if role==Qt.ItemDataRole.UserRole:
             return [v.get('sample',''),v.get('pos',0),v.get('ref','')+'>'+v.get('alt',''),v.get('cdna') or '',v.get('protein_snv_alone') or '',v.get('format_af') if v.get('format_af') is not None else -1,v.get('format_dp') if v.get('format_dp') is not None else -1,v.get('filter') or '',','.join(flags(v))][c]
         if role in (Qt.ItemDataRole.DisplayRole,Qt.ItemDataRole.ToolTipRole):

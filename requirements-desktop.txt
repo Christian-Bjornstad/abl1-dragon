@@ -7,3 +7,4 @@ PyQt6-sip==13.13.0
 openpyxl==3.1.5
 et_xmlfile==2.0.0
 websocket-client==1.9.0
+Pillow==13.0.0

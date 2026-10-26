@@ -105,9 +105,9 @@ def diagnostic(root, project, requirements):
               "environment_python": str(python), "requirements": requirements,
               "ready": False, "errors": []}
     if (root / ".abl1-install.lock").exists():
-        result["errors"].append("Installasjon pågår; vent til Installer ABL1.cmd er ferdig.")
+        result["errors"].append("Installasjon pågår; vent til Installer DRAGEN.cmd er ferdig.")
     if not python.is_file():
-        result["errors"].append("Lokalt .venv mangler. Kjør Installer ABL1.cmd først.")
+        result["errors"].append("Lokalt .venv mangler. Kjør Installer DRAGEN.cmd først.")
         return result
     try:
         cfg = (root / ".venv/pyvenv.cfg").read_text(encoding="utf-8").lower()
@@ -121,7 +121,7 @@ def diagnostic(root, project, requirements):
             result["errors"].append("Eksisterende .venv har feil Python-versjon. Bevar eller flytt det før ny installasjon.")
         for row in details["requirements"]:
             if row["installed"] != row["required"]:
-                result["errors"].append(f"{row['name']}: krever {row['required']}, funnet {row['installed'] or 'mangler'}. Kjør Installer ABL1.cmd.")
+                result["errors"].append(f"{row['name']}: krever {row['required']}, funnet {row['installed'] or 'mangler'}. Kjør Installer DRAGEN.cmd.")
         for relative in RESOURCE_FILES:
             if not (root / relative).is_file():
                 result["errors"].append("Ressurs mangler: " + relative)
@@ -221,7 +221,7 @@ def install(root, args, project, logfile):
     checked = diagnostic(root, project, pinned_requirements(root))
     if not checked["ready"]:
         raise RuntimeError("\n".join(checked["errors"]))
-    print("Installasjonen er kontrollert. Bruk Start ABL1.cmd.", flush=True)
+    print("Installasjonen er kontrollert. Bruk Start DRAGEN.cmd.", flush=True)
     return 0
 
 

@@ -1,15 +1,16 @@
-"""Folder → candidates → local IGV and source lookup → one-sheet Excel."""
+"""Folder → selected variants → local IGV and sources → per-variant Excel."""
 from pathlib import Path
 from datetime import datetime
+import time,uuid
 from PyQt6.QtCore import QMargins,QObject,QSignalBlocker,QThread,QTimer,Qt,pyqtSignal
 from PyQt6.QtGui import QCursor,QIcon,QPixmap
 from PyQt6.QtWidgets import (QAbstractItemView,QApplication,QComboBox,QFileDialog,QHBoxLayout,QFrame,QGridLayout,QStackedWidget,
     QHeaderView,QLabel,QLayout,QMainWindow,QMessageBox,QPlainTextEdit,QProgressBar,QScrollArea,QSplitter,
-    QTableView,QVBoxLayout,QWidget)
+    QTableView,QVBoxLayout,QWidget,QSizePolicy)
 from . import APP_NAME
 from .domain import ReviewStore,load_inputs,resource_root
 from .models import VariantModel,VariantFilter
-from .workflow import allele_key
+from .workflow import allele_key,row_key
 from .report import export_report,PROVIDER_NAMES
 from .database_browser import EdgeBrowser
 from .lookup_browser import PortalBrowser
@@ -30,6 +31,8 @@ class MainWindow(QMainWindow):
     def __init__(self,store:ReviewStore,*,browser_enabled=True,session=None,database_browser=None):
         super().__init__();self.store=store;self.session=None;self.current_variant=None
         self.run_files=None;self.lookup_results={};self.thread=None;self.worker=None
+        self._export=None
+        self.capture_timer=QTimer(self);self.capture_timer.setInterval(200);self.capture_timer.timeout.connect(self._poll_capture)
         self.browser_enabled=browser_enabled;self.loading=False
         self.settings=Settings(store.path.parent)
         self.database_browser=database_browser or PortalBrowser(store.path.parent,edge_browser=EdgeBrowser(store.path.parent))
@@ -75,7 +78,8 @@ class MainWindow(QMainWindow):
         nav.addWidget(self.import_button);nav.addWidget(self.excel_button);shell.addWidget(rail)
         content=QWidget();content.setObjectName('ContentShell');layout=QVBoxLayout(content)
         layout.setContentsMargins(20,18,20,12);layout.setSpacing(12)
-        self.pages=QStackedWidget();analysis=QWidget();page=QVBoxLayout(analysis);page.setContentsMargins(0,0,0,0);page.setSpacing(10)
+        self.pages=QStackedWidget();self.pages.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Ignored)
+        analysis=QWidget();page=QVBoxLayout(analysis);page.setContentsMargins(0,0,0,0);page.setSpacing(10)
         page.addWidget(label('Varianter','PageTitle'))
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.setTextVisible(False);self.progress.hide();page.addWidget(self.progress)
         filters=QHBoxLayout();self.sample_filter=QComboBox();self.sample_filter.addItem('Alle prøver');self.sample_filter.setAccessibleName('Prøve')
@@ -84,7 +88,12 @@ class MainWindow(QMainWindow):
         self.search=QLineEdit();self.search.setPlaceholderText('Posisjon, cDNA eller protein');self.search.setAccessibleName('Variantsøk')
         self.count_label=label('')
         filters.addWidget(self.sample_filter);filters.addWidget(self.status_filter);filters.addWidget(self.search,1);filters.addWidget(self.count_label);page.addLayout(filters)
+        selection=QHBoxLayout()
+        self.mark_visible_button=button('Merk synlige',self.mark_visible)
+        self.clear_marks_button=button('Fjern merking',self.clear_marks)
+        selection.addWidget(self.mark_visible_button);selection.addWidget(self.clear_marks_button);selection.addStretch();page.addLayout(selection)
         self.variant_model=VariantModel();self.variant_proxy=VariantFilter(self);self.variant_proxy.setSourceModel(self.variant_model)
+        self.variant_model.dataChanged.connect(lambda *args:self._update_actions())
         self.variant_table=QTableView();self.variant_table.setModel(self.variant_proxy);self.variant_table.setSortingEnabled(True)
         self.variant_table.sortByColumn(0,Qt.SortOrder.AscendingOrder)
         self.variant_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -116,6 +125,8 @@ class MainWindow(QMainWindow):
         self.settings_panel.changed.connect(self._settings_changed)
         self.settings_panel.busyChanged.connect(lambda busy:self._update_actions())
         self.pages.addWidget(self.settings_panel);layout.addWidget(self.pages,1);shell.addWidget(content,1)
+        self.cancel_export_button=button('Avbryt eksport',self.cancel_export);self.cancel_export_button.hide()
+        layout.addWidget(self.cancel_export_button)
         for control in (self.sample_filter,self.status_filter):control.currentTextChanged.connect(self._filter)
         self.search.textChanged.connect(self._filter);self.variant_proxy.rowsInserted.connect(self._update_count)
         shell.setSizeConstraint(QLayout.SizeConstraint.SetDefaultConstraint)
@@ -180,6 +191,14 @@ class MainWindow(QMainWindow):
     def visible_rows(self):
         return [self.variant_model.rows[self.variant_proxy.mapToSource(self.variant_proxy.index(i,0)).row()] for i in range(self.variant_proxy.rowCount())]
 
+    def mark_visible(self):
+        for i in range(self.variant_proxy.rowCount()):
+            self.variant_proxy.setData(self.variant_proxy.index(i,0),Qt.CheckState.Checked,Qt.ItemDataRole.CheckStateRole)
+
+    def clear_marks(self):
+        for i in range(self.variant_model.rowCount()):
+            self.variant_model.setData(self.variant_model.index(i,0),Qt.CheckState.Unchecked,Qt.ItemDataRole.CheckStateRole)
+
     def select_variant(self,sample,pos=None):
         self.sample_filter.setCurrentText(sample)
         for i,v in enumerate(self.visible_rows()):
@@ -216,13 +235,23 @@ class MainWindow(QMainWindow):
             if v:self.log_event('IGV: BAM/CRAM med indeks mangler for '+str(v['sample'])+'.')
 
     def lookup_selected(self):
-        if not self.current_variant or self.loading:return
+        if self.loading:return
         from .lookup import LookupService
-        v=dict(self.current_variant);key=allele_key(v);providers=tuple(self.settings.providers)
+        rows={allele_key(v):dict(v) for v in self.variant_model.selected_rows()};providers=tuple(self.settings.providers)
+        if not rows:return
         modes={p:'browser' for p in ('franklin','oncokb','cosmic','mtbp')}
         def operation():
-            return key,LookupService(self.store.path.parent,browser_adapter=self.database_browser).lookup(v,providers,settings={'provider_modes':modes})
-        self._start_task(operation,self._lookup_finished,f"Søker i databaser: {v['chrom']}:{v['pos']} {v['ref']}>{v['alt']} …")
+            results=[]
+            service=LookupService(self.store.path.parent,browser_adapter=self.database_browser)
+            for key,v in rows.items():
+                found=service.lookup(v,providers,settings={'provider_modes':modes})
+                if self.browser_enabled and hasattr(self.database_browser,'capture_result'):
+                    found=[self.database_browser.capture_result(item['provider'],v,item) for item in found]
+                results.append((key,found))
+            return results
+        def finished(results):
+            for result in results:self._lookup_finished(result)
+        self._start_task(operation,finished,f'Søker i databaser: {len(rows)} merkede alleler …')
 
     def _lookup_finished(self,result):
         key,results=result;self.lookup_results[key]=results;self._render_sources()
@@ -251,17 +280,61 @@ class MainWindow(QMainWindow):
     def open_settings(self):self.navigate(2)
 
     def export_excel_dialog(self):
-        if not self.session:return
-        path,_=QFileDialog.getSaveFileName(self,'Eksporter Excel','ABL1_resultater.xlsx','Excel (*.xlsx)')
-        if path:
-            try:
-                if not path.lower().endswith('.xlsx'):path+='.xlsx'
-                samples=[s['sample'] for s in self.session.data['samples'] if self.sample_filter.currentText() in ('Alle prøver',s['sample'])]
-                selection=' · '.join(x for x in (self.sample_filter.currentText(),self.status_filter.currentText(),self.search.text()) if x)
-                export_report(self.session,self.visible_rows(),self.lookup_results,path,providers=self.settings.providers,samples=samples,selection=selection)
-                self.statusBar().showMessage(f'{len(self.visible_rows())} varianter eksportert: '+path)
-                self.log_event(f'{len(self.visible_rows())} varianter eksportert til Excel.')
-            except (OSError,ValueError) as error:self._error(str(error))
+        if not self.session or not self.variant_model.selected_rows() or self.loading:return
+        path,_=QFileDialog.getSaveFileName(self,'Eksporter Excel','DRAGEN_resultater.xlsx','Excel (*.xlsx)')
+        if path:self.start_export(path if path.lower().endswith('.xlsx') else path+'.xlsx')
+
+    def start_export(self,path):
+        rows=[dict(v) for v in self.variant_model.selected_rows()]
+        if not rows or self.loading:return
+        self._export={'path':path,'rows':rows,'queue':list(rows),'images':{},'errors':{},'current':None}
+        self.loading=True;self.progress.show();self.cancel_export_button.show();self._update_actions()
+        self.pages.setCurrentIndex(1)
+        for i,item in enumerate(self.nav_buttons):item.setChecked(i==1)
+        self.log_event(f'Excel: tar IGV-bilder for {len(rows)} merkede varianter.')
+        QTimer.singleShot(0,self._export_next)
+
+    def cancel_export(self):
+        self.capture_timer.stop();self._export=None;self.loading=False;self.progress.hide();self.cancel_export_button.hide()
+        self.read_viewer.clear();self._update_actions();self.log_event('Excel-eksport avbrutt.')
+        self.igv_title.setText(self.variant_title.text())
+        self.navigate(0)
+
+    def _export_next(self):
+        if not self._export:return
+        if not self._export['queue']:
+            job=self._export;self._export=None;self.loading=False;self.cancel_export_button.hide()
+            self.igv_title.setText(self.variant_title.text());self.read_viewer.clear()
+            self.navigate(0)
+            def operation():
+                export_report(self.session,job['rows'],self.lookup_results,job['path'],providers=tuple(self.settings.providers),igv_images=job['images'],igv_errors=job['errors'])
+                return len(job['rows'])
+            self._start_task(operation,lambda n:self.log_event(f'Excel lagret: {n} variantark · '+str(job['path'])),'Lagrer Excel …')
+            return
+        variant=self._export['queue'].pop(0);self._export['current']=variant
+        self.igv_title.setText(f"{variant['sample']} · {variant.get('protein_snv_alone') or variant.get('cdna') or variant['pos']}")
+        alignment=self.run_files.alignments.get(variant['sample']) if self.run_files else None
+        reference=Path(self.settings.reference) if self.settings.reference else self.run_files.reference_fasta if self.run_files else None
+        if not alignment or not reference:
+            self._export['errors'][row_key(variant)]='BAM/CRAM med indeks eller referanse mangler.'
+            QTimer.singleShot(0,self._export_next);return
+        self.read_viewer.show_alignment(alignment,reference,variant)
+        self._capture_deadline=time.monotonic()+45;self.capture_timer.start()
+
+    def _poll_capture(self):
+        if not self._export:self.capture_timer.stop();return
+        viewer=self.read_viewer;variant=self._export['current'];job=self._export
+        def complete(path,error):
+            if self._export is not job:return
+            if error:job['errors'][row_key(variant)]=error
+            else:job['images'][row_key(variant)]=path
+            QTimer.singleShot(0,self._export_next)
+        if viewer.save_image_button.isEnabled():
+            self.capture_timer.stop()
+            folder=self.store.path.parent/'evidence/igv';folder.mkdir(parents=True,exist_ok=True)
+            viewer.capture_png(folder/(row_key(variant)+'-'+uuid.uuid4().hex+'.png'),complete)
+        elif time.monotonic()>self._capture_deadline or (viewer._pending is None and viewer.current_alignment is None) or viewer.web_view and viewer.web_view.title().startswith('ABL1_IGV_ERROR'):
+            self.capture_timer.stop();complete(None,viewer.status_label.text())
 
     def _start_task(self,operation,callback,message):
         if self.thread is not None:return
@@ -283,15 +356,19 @@ class MainWindow(QMainWindow):
         busy=self.loading or (hasattr(self,'settings_panel') and self.settings_panel.busy)
         self.import_button.setEnabled(not busy);self.settings_button.setEnabled(not busy);self.analysis_button.setEnabled(not busy)
         self.igv_button.setEnabled(not busy);self.open_igv_button.setEnabled(self.current_variant is not None and not busy)
-        self.excel_button.setEnabled(self.session is not None and not self.loading)
-        self.lookup_button.setEnabled(self.current_variant is not None and bool(self.settings.providers) and not self.loading)
+        count=len(self.variant_model.selected_rows()) if hasattr(self,'variant_model') else 0
+        self.excel_button.setText(f'Eksporter Excel ({count})' if count else 'Eksporter Excel')
+        self.lookup_button.setText(f'Søk i databaser ({count})' if count else 'Søk i databaser')
+        self.excel_button.setEnabled(bool(count) and not busy)
+        self.lookup_button.setEnabled(bool(count) and bool(self.settings.providers) and not busy)
+        for control in (self.variant_table,self.sample_filter,self.status_filter,self.search,self.mark_visible_button,self.clear_marks_button):control.setEnabled(not busy)
 
     def _error(self,message):
         self.log_event(message)
         self.statusBar().showMessage(message);QMessageBox.warning(self,APP_NAME,message)
 
     def closeEvent(self,event):
-        if self.thread is not None or self.settings_panel.busy:
+        if self.thread is not None or self.settings_panel.busy or self._export is not None:
             self.statusBar().showMessage('Vent til operasjonen er ferdig.');event.ignore();return
         self.read_viewer.shutdown()
         if hasattr(self.database_browser,'shutdown'):self.database_browser.shutdown()

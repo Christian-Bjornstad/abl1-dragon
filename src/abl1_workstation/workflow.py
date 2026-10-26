@@ -9,6 +9,10 @@ def allele_key(variant):
     return hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()
 
 
+def row_key(variant):
+    return hashlib.sha256((str(variant.get('sample',''))+'\0'+allele_key(variant)).encode()).hexdigest()
+
+
 def category(v):
     if v.get('reference_match') is False:return 'REF-avvik'
     if v.get('normal_transcript_continuation'):return 'Transkriptfortsettelse'

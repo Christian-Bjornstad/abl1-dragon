@@ -27,17 +27,17 @@ def build(wheelhouse, output):
                 if name.endswith('/'):continue
                 if '..' in Path(name).parts:raise ValueError('Ugyldig Git-filbane.')
                 raw=source.read(name);checksums[name]=hashlib.sha256(raw).hexdigest()
-                package.writestr('ABL1_Dragon/'+name,raw)
+                package.writestr('DRAGEN/'+name,raw)
         for wheel in wheels:
             name='wheelhouse/'+wheel.name
             with wheel.open('rb') as stream:checksums[name]=hashlib.file_digest(stream,'sha256').hexdigest()
-            package.write(wheel,'ABL1_Dragon/'+name,compress_type=zipfile.ZIP_STORED)
+            package.write(wheel,'DRAGEN/'+name,compress_type=zipfile.ZIP_STORED)
         manifest={'version':version,'commit':revision,'sha256':checksums}
-        package.writestr('ABL1_Dragon/SHA256SUMS.json',json.dumps(manifest,indent=2)+'\n')
+        package.writestr('DRAGEN/SHA256SUMS.json',json.dumps(manifest,indent=2)+'\n')
     with zipfile.ZipFile(output) as package:
         if package.testzip():raise ValueError('ZIP CRC-feil.')
         for name,checksum in checksums.items():
-            if hashlib.sha256(package.read('ABL1_Dragon/'+name)).hexdigest()!=checksum:
+            if hashlib.sha256(package.read('DRAGEN/'+name)).hexdigest()!=checksum:
                 raise ValueError('Hash-avvik: '+name)
     with output.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
     receipt={'file':output.name,'version':version,'commit':revision,'sha256':checksum,
@@ -49,5 +49,5 @@ def build(wheelhouse, output):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--wheelhouse',type=Path,required=True)
-    parser.add_argument('--output',type=Path,default=ROOT/'dist/ABL1_Dragon_Python_offline.zip')
+    parser.add_argument('--output',type=Path,default=ROOT/'dist/DRAGEN_Python_offline.zip')
     args=parser.parse_args();build(args.wheelhouse,args.output)

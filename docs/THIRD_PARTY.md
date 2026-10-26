@@ -2,6 +2,10 @@
 
 DRAGEN er distribuert under GPL-3.0. Se [LICENSE](../LICENSE).
 
+IGV-sporene `assets/igv/abl1.bed` og `protein.bed` er generert fra den medfølgende offentlige RefSeq-kartleggingen NM_005157.6 i hg19. Proteinsporet viser referansetranslasjon. Kromosombånd for chr9 kommer fra [UCSC hg19 cytoBand](https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/cytoBand.txt.gz). Bygges med `scripts/build_igv_annotations.py`.
+
+Pillow brukes til PNG-bilder i Excel, under [HPND-lisensen](https://pillow.readthedocs.io/en/stable/about.html#license).
+
 PyQt6 og PyQt-WebEngine bruker GPLv3 eller kommersiell lisens.
 Qt-bibliotekenes egne lisenser følger deres distribusjon.
 [Riverbank](https://www.riverbankcomputing.com/software/pyqt/intro).

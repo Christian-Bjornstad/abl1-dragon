@@ -14,7 +14,7 @@ Disse CMD-filene trenger lokal Ivanti-program-ID i `ABL1_IVANTI_APP_ID`.
 En separat lokal testpakke kan ha forhåndsutfylte startfiler som setter dette bare
 for den aktuelle kjøringen. De endrer ikke Windows-miljø eller register.
 
-På PC med vanlig Python brukes **Installer ABL1.cmd** og **Start ABL1.cmd**.
+På PC med vanlig Python brukes **Installer DRAGEN.cmd** og **Start DRAGEN.cmd**.
 
 ## Kontroller i appen
 
@@ -22,7 +22,7 @@ På PC med vanlig Python brukes **Installer ABL1.cmd** og **Start ABL1.cmd**.
 - Bytt mellom **PASS + kandidater**, **PASS**, **Kandidater** og **Alle**.
 - Velg lokal GRCh37 FASTA i **Innstillinger** ved behov. Kontroller IGV for en prøve med indeks.
 - Velg en variant og bruk **Søk i databaser**. Kontroller at treff og manglende tilgang skilles.
-- Eksporter Excel. Arbeidsboken skal ha én fane med det synlige variantutvalget.
+- Merk to varianter og eksporter Excel. Arbeidsboken skal ha ett ark per merket prøve/variant, med proteinvariant som navn og uten oversiktsark. Kontroller riktig prøve, AF/DP og IGV-bilde i hvert ark. Manglende bilder eller tilgang skal angis.
 - Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
 - Kontroller jobbkonto og Microsoft-synk. Edge kan automatisk koble en Windows-konto
   til en ny profilmappe; egen mappe alene bekrefter ikke at synk er avslått.

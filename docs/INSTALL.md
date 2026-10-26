@@ -3,24 +3,24 @@
 Python 3.12–3.14, 64 bit, må være installert. Pakk ut hele offline-pakken
 til en fast, skrivbar programmappe.
 
-1. Kjør **Installer ABL1.cmd** én gang.
-2. Kjør **Start ABL1.cmd**.
+1. Kjør **Installer DRAGEN.cmd** én gang.
+2. Kjør **Start DRAGEN.cmd**.
 
 Installeringen lager et isolert `.venv` i programmappen. Med `wheelhouse` til
 stede brukes bare lokale pakker. Vanlig oppstart installerer ingenting.
-**Kontroller ABL1.cmd** viser Python, avhengigheter og eventuelle feil.
+**Kontroller DRAGEN.cmd** viser Python, avhengigheter og eventuelle feil.
 Logg: `work/launcher-logs/bootstrap.log`.
 
 Bestemt Python kan velges med `ABL1_PYTHON` eller første argument:
 
 ```cmd
-"Installer ABL1.cmd" --python "C:\Python314\python.exe" --offline
-"Start ABL1.cmd" --data-dir "D:\LokaleAnalyser\ABL1"
+"Installer DRAGEN.cmd" --python "C:\Python314\python.exe" --offline
+"Start DRAGEN.cmd" --data-dir "D:\LokaleAnalyser\ABL1"
 ```
 
 ## Fra kildekoden
 
-Git-repoet inneholder ingen binære avhengigheter. Bruk **Installer ABL1.cmd --online**
+Git-repoet inneholder ingen binære avhengigheter. Bruk **Installer DRAGEN.cmd --online**
 på en PC som kan laste ned Python-pakker, eller lag en wheelhouse for målmaskinen:
 
 ```cmd

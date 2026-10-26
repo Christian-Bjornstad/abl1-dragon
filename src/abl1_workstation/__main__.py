@@ -67,7 +67,10 @@ def main(argv=None):
         workbook_file=diagnostic_dir/'analyse.xlsx';export_report(window.session,window.session.data['variants'],{},workbook_file)
         from openpyxl import load_workbook
         workbook=load_workbook(workbook_file,read_only=True)
-        proof['excel_variant_rows']=workbook['Resultater'].max_row-3;proof['excel_single_sheet']=workbook.sheetnames==['Resultater'];workbook.close()
+        proof['excel_variant_rows']=len(workbook.worksheets)
+        proof['excel_variant_sheets']=workbook.sheetnames
+        proof['excel_no_overview']='Resultater' not in workbook.sheetnames and len(workbook.worksheets)==3
+        workbook.close()
         import gzip
         vcf=diagnostic_dir/'NySample.vcf.gz'
         text='##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNySample\nchr9\t133748283\t.\tC\tT\t.\tPASS\t.\tGT:AF:AD:DP\t0/1:0.25:75,25:100\n'
@@ -78,7 +81,7 @@ def main(argv=None):
             if not window.grab().save(str(args.screenshot)):raise RuntimeError('Skjermbilde kunne ikke lagres')
         args.smoke_test.parent.mkdir(parents=True,exist_ok=True);args.smoke_test.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         window.close();app.processEvents()
-        return 0 if native_check and proof['synthetic_demo'] and proof['project_roundtrip'] and proof['vcf_gzip_import'] and proof['excel_variant_rows']==3 and proof['qc_rows']==0 and proof['phase_rows']==0 else 2
+        return 0 if native_check and proof['synthetic_demo'] and proof['project_roundtrip'] and proof['vcf_gzip_import'] and proof['excel_no_overview'] and proof['excel_variant_rows']==3 and proof['qc_rows']==0 and proof['phase_rows']==0 else 2
     return app.exec()
 
 

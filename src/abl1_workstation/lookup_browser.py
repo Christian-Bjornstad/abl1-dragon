@@ -1,11 +1,12 @@
 """Selected-variant portal retrieval through app-owned, logged-in Edge profiles.
 
 Uses an ephemeral loopback DevTools endpoint in an app-owned Edge profile.
-Credentials are entered in Edge. No cookies/passwords are read by this module.
+Saved accounts are filled only into allowlisted same-origin login forms.
 Portal text is untrusted data; identity and meaningful result markers are checked.
 """
 from __future__ import annotations
 import atexit
+import base64
 from datetime import datetime,timezone
 import json
 import os
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from urllib.parse import quote, unquote, urlsplit, parse_qs
 from urllib.request import ProxyHandler, build_opener
 
@@ -28,6 +30,8 @@ LOGIN_URLS={'franklin':'https://franklin.genoox.com/login',
             'mtbp':'https://mtbp.org/analyse/'}
 PORTAL_HOSTS={'franklin':{'franklin.genoox.com'},'oncokb':{'www.oncokb.org'},
               'cosmic':{'cancer.sanger.ac.uk','grch37-cancer.sanger.ac.uk'},'mtbp':{'mtbp.org'}}
+PUBLIC_HOSTS={'clinvar':{'www.ncbi.nlm.nih.gov'},'gnomad':{'gnomad.broadinstitute.org'}}
+PORTAL_HOSTS.update(PUBLIC_HOSTS)
 CLASS_LABELS=r'(?<![A-Za-z])(?:Likely pathogenic|Pathogenic|Likely benign|Benign|Uncertain significance|VUS|Likely oncogenic|Oncogenic|Likely neutral|Neutral|Inconclusive)(?![A-Za-z])'
 
 
@@ -346,6 +350,37 @@ class _EdgeContext:
 
     def auth_snapshot(self):return self.snapshot(auth_only=True)
 
+    def capture_png(self,path):
+        result=self._connection.call('Page.captureScreenshot',{'format':'png','captureBeyondViewport':False,'fromSurface':True},session_id=self._session)
+        value=result.get('data','')
+        if not isinstance(value,str) or len(value)>28_000_000:raise ValueError('Databasebildet er for stort.')
+        image=base64.b64decode(value,validate=True)
+        if not image.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Ugyldig databasebilde.')
+        Path(path).write_bytes(image)
+
+    def fill_login(self,provider,email,password):
+        hosts=json.dumps(sorted(PORTAL_HOSTS[provider]))
+        # Recheck the destination in-page: navigation can race an earlier probe.
+        return self.evaluate("""(()=>{
+          const allowed="""+hosts+""";
+          if(location.protocol!=='https:'||!allowed.includes(location.hostname)||(location.port&&location.port!=='443'))return false;
+          const visible=e=>e&&e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0&&getComputedStyle(e).visibility!=='hidden';
+          const passwords=[...document.querySelectorAll('input[type=password]')].filter(visible);
+          if(passwords.length!==1)return false;
+          const p=passwords[0],form=p.form;if(!form)return false;
+          const users=[...form.querySelectorAll('input[type=email],input[name=username],input[name=email],#email,#username,input[autocomplete=username],input[placeholder="Registered email address"],input[placeholder="Your institutional email address"]')].filter(visible);
+          const unique=[...new Set(users)];if(unique.length!==1)return false;
+          const target=new URL(form.action||location.href,location.href);
+          if(target.protocol!=='https:'||!allowed.includes(target.hostname)||(target.port&&target.port!=='443'))return false;
+          if(form.querySelector('input[type=checkbox][required]:not(:checked)')||/captcha|verify you are human/i.test(form.innerText))return false;
+          const submit=[...form.querySelectorAll('button,input[type=submit]')].find(e=>visible(e)&&/^(sign in|log in|login|sign-in)$/i.test((e.innerText||e.value||'').trim()));
+          if(!submit)return false;
+          const action=new URL(submit.formAction||form.action||location.href,location.href);
+          if(action.protocol!=='https:'||!allowed.includes(action.hostname)||(action.port&&action.port!=='443'))return false;
+          const set=(e,v)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,v);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));};
+          set(unique[0],"""+json.dumps(email)+""");set(p,"""+json.dumps(password)+""");if(submit.disabled)return false;if(form.method.toLowerCase()!=='post')return true;submit.click();return true;
+        })()""")
+
     def is_alive(self):
         """True/False require a completed target probe; None is inconclusive."""
         if self._connection is None:return False
@@ -394,8 +429,23 @@ class PortalBrowser:
         self.data_dir=Path(data_dir).resolve();self.edge=edge_browser or EdgeBrowser(self.data_dir)
         self.profile_dir=self.data_dir/'PortalProfiler'
         self._context_factory=context_factory or _EdgeContext
-        self._contexts={};self._confirmations={};self._locks={p:threading.RLock() for p in LOGIN_URLS};self._closed=False
+        self._contexts={};self._confirmations={};self._locks={p:threading.RLock() for p in PORTAL_HOSTS};self._closed=False
+        from .credentials import CredentialStore
+        self.credentials=CredentialStore(self.data_dir)
         atexit.register(self.close)
+    def set_credentials(self,credentials):self.credentials=credentials
+
+    def _saved_login(self,provider,context):
+        from .credentials import CredentialStoreError
+        if not hasattr(context,'fill_login'):return False
+        try:email,password=self.credentials.get(provider)
+        except CredentialStoreError:return False
+        if not email or not password:return False
+        for attempt in range(12):
+            if context.fill_login(provider,email,password):return True
+            if self.status(provider).get('status')=='logged_in':return True
+            time.sleep(.4)
+        return False
     def diagnostics(self):
         result=dict(self.edge.diagnostics());result['profile_dir']=str(self.profile_dir)
         result['authenticated']=None;result['controlled_portal_profiles']=list(self._contexts)
@@ -437,7 +487,7 @@ class PortalBrowser:
         return result
 
     def status(self,provider):
-        if provider not in self._locks:return {'status':'public','summary':'Åpen kilde'}
+        if provider not in LOGIN_URLS:return {'status':'public','summary':'Åpen kilde'}
         with self._locks[provider]:
             checked=datetime.now(timezone.utc).isoformat()
             context=self._contexts.get(provider)
@@ -461,7 +511,8 @@ class PortalBrowser:
         if provider not in LOGIN_URLS:raise ValueError('Kilden har ingen portalinnlogging.')
         with self._locks[provider]:
             context=self._context(provider)
-            if self.status(provider).get('status') not in {'logged_in','last_confirmed'}:context.navigate(LOGIN_URLS[provider])
+            if self.status(provider).get('status') not in {'logged_in','last_confirmed'}:
+                context.navigate(LOGIN_URLS[provider]);self._saved_login(provider,context)
             if hasattr(context,'bring_to_front'):context.bring_to_front()
     def open_url(self,url):
         checked_url(url);host=urlsplit(url).hostname
@@ -469,6 +520,49 @@ class PortalBrowser:
         if provider:
             with self._locks[provider]:return self._context(provider).navigate(url)
         return self.edge.open_url(url)
+
+    def _capture(self,provider,variant,context,result):
+        from .workflow import allele_key
+        if not hasattr(context,'capture_png'):return {**result,'screenshot_error':'Nettleseren støtter ikke bildeuttak.'}
+        root=self.data_dir/'evidence/databases'/allele_key(variant);root.mkdir(parents=True,exist_ok=True)
+        path=root/(provider+'-'+uuid.uuid4().hex+'.png')
+        try:
+            context.capture_png(path)
+            snapshot=context.snapshot() or {}
+            if provider in PUBLIC_HOSTS:
+                valid=self._public_identity(provider,variant,snapshot)
+            else:valid=parse_portal_snapshot(provider,variant,snapshot).get('identity_verified') is True
+            if not valid:
+                path.unlink(missing_ok=True)
+                return {**result,'screenshot_error':'Siden ble endret under bildeuttaket.'}
+            return {**result,'screenshot':str(path),'identity_verified':True}
+        except (OSError,ValueError,RuntimeError,TimeoutError):
+            path.unlink(missing_ok=True)
+            return {**result,'screenshot_error':'Databasebildet kunne ikke hentes.'}
+
+    @staticmethod
+    def _public_identity(provider,variant,snapshot):
+        if not _provider_page(provider,snapshot.get('url','')) or snapshot.get('password_visible'):return False
+        compact=re.sub(r'\s+','',unquote(str(snapshot.get('text',''))))
+        identity=canonical_identity(variant)
+        if provider=='clinvar':return genomic_hgvs(variant) in compact
+        needle=f"{identity['chrom']}-{identity['pos']}-{identity['ref']}-{identity['alt']}"
+        parts=urlsplit(snapshot.get('url',''))
+        return parts.path=='/variant/'+needle and parse_qs(parts.query).get('dataset')==['gnomad_r2_1'] and needle in compact and bool(re.search(r'GRCh37|hg19',compact))
+
+    def capture_result(self,provider,variant,result):
+        if result.get('status')!='found' or provider not in PUBLIC_HOSTS:return result
+        url=result.get('url','')
+        if not _provider_page(provider,url):return {**result,'screenshot_error':'Uventet kildeadresse.'}
+        with self._locks[provider]:
+            try:
+                context=self._context(provider);context.navigate(url)
+                deadline=time.monotonic()+20
+                while time.monotonic()<deadline:
+                    if self._public_identity(provider,variant,context.snapshot() or {}):return self._capture(provider,variant,context,result)
+                    time.sleep(.5)
+            except (OSError,ValueError,RuntimeError,TimeoutError):pass
+        return {**result,'screenshot_error':'Nettsiden kunne ikke bekrefte allelet for bildet.'}
     def lookup(self,provider,variant,*,settings=None):
         if provider=='mtbp':return {'status':'unsupported','summary':'MTBP-oppslag oppretter eksterne analyser. Denne adapteren sender eller sletter ingen slike rapporter.'}
         if provider not in ('franklin','oncokb','cosmic'):return {'status':'unsupported','summary':'Kilden bruker offentlig API-adapter.'}
@@ -487,7 +581,8 @@ class PortalBrowser:
                 snapshot=context.snapshot() or {}
                 self._record_status(provider,context,login_status(provider,snapshot))
                 result=parse_portal_snapshot(provider,variant,snapshot)
-                if result['status'] in {'found','not_found','login_required','license_required'}:return result
+                if result['status']=='found':return self._capture(provider,variant,context,result)
+                if result['status'] in {'not_found','login_required','license_required'}:return result
                 if provider=='cosmic' and hasattr(context,'evaluate'):
                     # Only follow a specific mutation-result link, never a login,
                     # download, report creation, acceptance, or account action.

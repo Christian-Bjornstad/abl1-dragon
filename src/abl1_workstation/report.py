@@ -1,15 +1,14 @@
-"""Single-sheet result export with original caller fields and source status."""
+"""One worksheet per selected sample/allele, with local evidence images."""
 from datetime import datetime
 from pathlib import Path
-from . import APP_NAME, __version__
+import math,os,re,tempfile
+from urllib.parse import urlsplit
+from . import APP_NAME,__version__
 from .models import flags
-from .workflow import allele_key,category
+from .workflow import allele_key,row_key
 
-PROVIDER_NAMES={'clinvar':'ClinVar','gnomad':'gnomAD','cosmic':'COSMIC',
-                'oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
-STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves',
-              'license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig'}
-
+PROVIDER_NAMES={'clinvar':'ClinVar','gnomad':'gnomAD','cosmic':'COSMIC','oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
+STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig'}
 
 def source_text(result):
     if not result:return 'Ikke slått opp'
@@ -21,7 +20,6 @@ def source_text(result):
         if value and str(value) not in parts:parts.append(str(value))
     return ' · '.join(parts) or str(result.get('accession') or 'Treff')
 
-
 def safe_text(value):
     if isinstance(value,str):
         value=''.join(c for c in value if ord(c)>=32 or c in '\n\t')
@@ -29,56 +27,82 @@ def safe_text(value):
         return value[:32767]
     return value
 
+def _sheet_name(variant,used):
+    raw=str(variant.get('protein_snv_alone') or variant.get('cdna') or variant.get('pos') or 'Variant')
+    base=re.sub(r'[\[\]:*?/\\\x00-\x1f]','_',raw.removeprefix('p.')).strip(" '") or 'Variant'
+    name=base[:31];number=1
+    while name.casefold() in used:
+        suffix=' '+str(number+1);name=base[:31-len(suffix)]+suffix;number+=1
+    used.add(name.casefold());return name
 
-def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnomad','cosmic','oncokb','franklin'),samples=None,selection=''):
+def _image(sheet,path,row):
+    from PIL import Image as PillowImage
+    from openpyxl.drawing.image import Image
+    path=Path(path)
+    if path.stat().st_size>20*1024*1024:raise ValueError('Bildet er for stort.')
+    with PillowImage.open(path) as source:
+        if source.format!='PNG' or source.width*source.height>32_000_000:raise ValueError('Ugyldig PNG-bilde.')
+        source.verify()
+    image=Image(str(path));scale=min(1,1000/image.width)
+    image.width=round(image.width*scale);image.height=round(image.height*scale)
+    sheet.add_image(image,'A'+str(row))
+    return row+math.ceil(image.height/20)+2
+
+def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnomad','cosmic','oncokb','franklin'),samples=None,selection='',igv_images=None,igv_errors=None):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment,Font,PatternFill
-    from openpyxl.worksheet.table import Table,TableStyleInfo
     from openpyxl.comments import Comment
-    book=Workbook();sheet=book.active;sheet.title='Resultater'
-    sheet.append([APP_NAME,__version__,'GRCh37 / NM_005157.6',datetime.now().isoformat(timespec='minutes')])
-    sheet.append(['Analyse',safe_text(session.source_label or session.run_id[:12]),'Utvalg',safe_text(selection)])
-    headers=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein (enkeltallel)','FILTER','Kategori',
-             'AF (%)','ALT / DP']+[PROVIDER_NAMES.get(p,p) for p in providers]
-    sheet.append(headers)
     rows=list(rows)
-    sample_names=[s['sample'] for s in session.data['samples']] if samples is None else list(samples)
-    represented={v['sample'] for v in rows}
-    export_rows=rows+[{'sample':name,'empty_selection':True} for name in sample_names if name not in represented]
-    for v in export_rows:
-        sources={r['provider']:r for r in lookup_results.get(allele_key(v),[])}
-        values=[v.get('sample'),f"{v.get('chrom')}:{v.get('pos')}",f"{v.get('ref')}>{v.get('alt')}",
-                v.get('cdna'),v.get('protein_snv_alone'),v.get('filter'),category(v),
-                v['format_af']*100 if v.get('format_af') is not None else None,
-                f"{v.get('alt_ad') if v.get('alt_ad') is not None else '–'} / {v.get('format_dp') if v.get('format_dp') is not None else '–'}"]+[source_text(sources.get(p)) for p in providers]
-        if v.get('empty_selection'):
-            values=[v['sample'],'','','','','','Ingen varianter i utvalget',None,'']+['–']*len(providers)
-        sheet.append([safe_text(x) for x in values])
-        notes=flags(v)
-        if notes:sheet.cell(sheet.max_row,5).comment=Comment(safe_text('; '.join(notes)),APP_NAME)
-        for col,provider in enumerate(providers,10):
-            result=sources.get(provider)
+    if not rows:raise ValueError('Merk minst én variant før eksport.')
+    book=Workbook();book.remove(book.active);used=set()
+    for variant in rows:
+        sheet=book.create_sheet(_sheet_name(variant,used));sheet.sheet_view.showGridLines=False
+        for column in 'ABCDEFGH':sheet.column_dimensions[column].width=18
+        def block(row,text,*,heading=False):
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=8)
+            cell=sheet.cell(row,1,safe_text(text));cell.alignment=Alignment(vertical='center',wrap_text=True)
+            cell.font=Font(name='Calibri',size=12 if heading else 11,bold=heading,color='FFFFFF' if heading else '292633')
+            if heading:cell.fill=PatternFill('solid',fgColor='7150A1')
+            sheet.row_dimensions[row].height=28 if heading else 34
+            return cell
+        block(1,str(variant.get('protein_snv_alone') or variant.get('cdna') or 'Variant')+' · '+str(variant.get('sample','')),heading=True)
+        block(2,APP_NAME+' · '+__version__+' · GRCh37 / NM_005157.6 · '+datetime.now().isoformat(timespec='minutes'))
+        facts=[('Prøve',variant.get('sample')),('Genomisk posisjon',f"{variant.get('chrom')}:{variant.get('pos')} {variant.get('ref')}>{variant.get('alt')}"),
+               ('cDNA',variant.get('cdna')),('Protein, enkeltallel',variant.get('protein_snv_alone')),
+               ('AF (%)',variant.get('format_af')*100 if variant.get('format_af') is not None else 'Ikke oppgitt'),
+               ('ALT / DP',f"{variant.get('alt_ad','–')} / {variant.get('format_dp','–')}"),('FILTER',variant.get('filter'))]
+        for row,(name,value) in enumerate(facts,4):
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=2)
+            sheet.cell(row,1,name).font=Font(bold=True,color='7150A1')
+            sheet.merge_cells(start_row=row,start_column=3,end_row=row,end_column=8)
+            cell=sheet.cell(row,3,safe_text(value));cell.alignment=Alignment(wrap_text=True,vertical='top')
+            sheet.row_dimensions[row].height=24
+            if name=='AF (%)':cell.number_format='0.00'
+            if name=='Protein, enkeltallel' and flags(variant):cell.comment=Comment(safe_text('; '.join(flags(variant))),APP_NAME)
+        row=12;block(row,'IGV',heading=True);row+=1
+        picture=(igv_images or {}).get(row_key(variant))
+        if picture:row=_image(sheet,picture,row)
+        else:
+            block(row,'Ikke tilgjengelig: '+str((igv_errors or {}).get(row_key(variant)) or 'BAM/CRAM og kontrollert referanse kreves.'));row+=2
+        sources={r['provider']:r for r in lookup_results.get(allele_key(variant),[])}
+        for provider in providers:
+            result=sources.get(provider);cell=block(row,PROVIDER_NAMES.get(provider,provider),heading=True);row+=1
+            text=block(row,source_text(result));sheet.row_dimensions[row].height=64
             if result:
-                # Keep provenance in the cell without widening the report.
-                provenance='\n'.join(str(result.get(k) or '') for k in ('provider','checked_at','accession','url'))
-                sheet.cell(sheet.max_row,col).comment=Comment(safe_text(provenance),APP_NAME)
-    sheet.freeze_panes='D4';sheet.sheet_view.showGridLines=False
-    for cell in sheet[1]:cell.font=Font(bold=True,color='7150A1')
-    for cell in sheet[3]:
-        cell.font=Font(bold=True,color='FFFFFF');cell.fill=PatternFill('solid',fgColor='7150A1')
-    if export_rows:
-        from openpyxl.utils import get_column_letter
-        table=Table(displayName='Variantresultater',ref=f'A3:{get_column_letter(len(headers))}{len(export_rows)+3}')
-        table.tableStyleInfo=TableStyleInfo(name='TableStyleMedium4',showRowStripes=True)
-        sheet.add_table(table)
-    widths=[22,27,22,23,24,22,26,12,18]+[45]*len(providers)
-    for i,width in enumerate(widths,1):
-        sheet.column_dimensions[sheet.cell(3,i).column_letter].width=width
-    for row in sheet.iter_rows(min_row=4):
-        for cell in row:cell.alignment=Alignment(vertical='top',wrap_text=True)
-        row[7].number_format='0.00'
-    sheet.print_title_rows='1:3';sheet.sheet_properties.pageSetUpPr.fitToPage=True
-    sheet.page_setup.orientation='landscape';sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
-    sheet.page_setup.fitToWidth=1;sheet.page_setup.fitToHeight=0
-    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);book.save(path)
-    book.close()
+                text.comment=Comment(safe_text('\n'.join(str(result.get(k) or '') for k in ('provider','checked_at','accession','url','identity_method'))),APP_NAME)
+                url=str(result.get('url') or '')
+                if urlsplit(url).scheme=='https':cell.hyperlink=url
+            row+=2
+            picture=result.get('screenshot') if result and result.get('status')=='found' and result.get('identity_verified') else None
+            if picture:row=_image(sheet,picture,row)
+            elif result and result.get('screenshot_error'):block(row,'Bilde: '+str(result['screenshot_error']));row+=2
+        sheet.freeze_panes='C4';sheet.print_options.horizontalCentered=True
+        sheet.sheet_properties.pageSetUpPr.fitToPage=True
+        sheet.page_setup.orientation='landscape';sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
+        sheet.page_setup.fitToWidth=1;sheet.page_setup.fitToHeight=0;sheet.print_title_rows='1:2'
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    descriptor,temporary=tempfile.mkstemp(prefix='.DRAGEN-',suffix='.xlsx',dir=path.parent);os.close(descriptor)
+    try:book.save(temporary);os.replace(temporary,path)
+    finally:
+        book.close()
+        if Path(temporary).exists():Path(temporary).unlink()

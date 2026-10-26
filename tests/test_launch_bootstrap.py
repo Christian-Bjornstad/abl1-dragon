@@ -59,7 +59,7 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(diagnostic["ready"])
         self.assertEqual(diagnostic["project"], str(self.project.resolve()))
         self.assertFalse((self.project / ".venv").exists())
-        self.assertIn("Installer ABL1.cmd", " ".join(diagnostic["errors"]))
+        self.assertIn("Installer DRAGEN.cmd", " ".join(diagnostic["errors"]))
 
     def test_start_does_not_install_or_launch_when_environment_is_missing(self):
         result = self.run_bootstrap("start", "--data-dir", "a data folder")

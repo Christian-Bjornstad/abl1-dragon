@@ -141,7 +141,7 @@ class LookupService:
             except HTTPError as error:
                 code=error.code;error.close()
                 status='login_required' if code==401 else 'license_required' if code==403 else 'error'
-                summary='Kilden krever ny innlogging/API-token.' if status=='login_required' else 'Kilden avviser tilgangen; kontroller lisens/API-tilgang.' if status=='license_required' else 'Kilden begrenset forespørsler; prøv senere.' if code==429 else f'Databaseforespørsel feilet (HTTP {code}).'
+                summary='Kilden krever ny innlogging.' if status=='login_required' else 'Kilden avviser tilgangen; kontroller lisens og innlogging.' if status=='license_required' else 'Kilden begrenset forespørsler; prøv senere.' if code==429 else f'Databaseforespørsel feilet (HTTP {code}).'
                 result=self._result(provider,identity,status,summary)
             except (URLError,TimeoutError,ConnectionError,OSError):result=self._result(provider,identity,'error','Databasen kunne ikke nås. Kontroller nettverk/proxy og prøv igjen.')
             except RuntimeError:result=self._result(provider,identity,'error','Portalvinduet kunne ikke brukes. Åpne kilden på nytt under Innstillinger.')
@@ -155,7 +155,7 @@ class LookupService:
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)
         if data['status']=='found' and canonical_identity(data.get('identity') or {})!=identity:raise ValueError('Nettlesertreffets allel er ikke kontrollert.')
-        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method'}
+        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshot_error'}
         return self._result(provider,identity,data['status'],str(data.get('summary','')),**{k:value for k,value in data.items() if k in allowed and k!='summary'})
 
     def _clinvar(self,v,tokens,settings):

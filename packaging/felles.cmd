@@ -18,7 +18,7 @@ pause
 exit /b 1
 :missing
 echo Finner ikke hele ABL1-mappen eller Python FELLES/Ivanti. 1>&2
-echo Bruk vanlig Installer ABL1.cmd / Start ABL1.cmd paa en PC med lokal Python. 1>&2
+echo Bruk vanlig Installer DRAGEN.cmd / Start DRAGEN.cmd paa en PC med lokal Python. 1>&2
 pause
 exit /b 1
 :failed
