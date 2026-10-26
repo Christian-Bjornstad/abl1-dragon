@@ -101,6 +101,20 @@ class FakeEdge:
 
 
 class PortalBrowserTests(unittest.TestCase):
+    def test_lookup_reuses_saved_login_then_retries_exact_query_once(self):
+        from unittest.mock import Mock
+        ready={'url':'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37',
+               'text':'GRCh37\n9:g.133748283C>T\nOncogenicity\nOncogenic'}
+        context=Mock();context.is_alive.return_value=True
+        context.snapshot.side_effect=[{'url':'https://www.oncokb.org/login','password_visible':True},
+                                      {'url':'https://www.oncokb.org/','oncokb_account_visible':True},ready]
+        browser=PortalBrowser(self.root,edge_browser=self.edge)
+        with patch.object(browser,'_context',return_value=context),patch.object(browser,'_saved_login',return_value=True) as login,patch.object(browser,'_capture',side_effect=lambda p,v,c,r:r),patch('abl1_workstation.lookup_browser.time.sleep'):
+            result=browser.lookup('oncokb',V)
+        self.assertEqual(result['status'],'found');login.assert_called_once_with('oncokb',context)
+        self.assertEqual(context.navigate.call_count,2)
+        self.assertEqual(context.navigate.call_args_list[0],context.navigate.call_args_list[1]);browser.close()
+
     def test_opening_second_provider_keeps_first_login_confirmation_when_recheck_is_inconclusive(self):
         contexts={}
         class Context:

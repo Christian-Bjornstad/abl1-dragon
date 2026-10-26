@@ -163,9 +163,10 @@ def parse_portal_snapshot(provider,variant,snapshot):
     identity_method=''
     if provider=='franklin':
         needle=f"chr{identity['chrom']}-{identity['pos']}-{identity['ref']}-{identity['alt']}"
-        route_match=re.search(r'/variant/snp/([^/?#]+)',route)
-        exact=route_match is not None and route_match[1]==needle and needle in compact and build37 and not build38
-        ready=bool(re.search(r'Suggested classification|Computed classification|ACMG classification|Oncogenic classification|Oncogenicity',text,re.I))
+        route_match=re.search(r'/variant/snp(?:Tumor)?/([^/?#]+)',route)
+        visible_allele=(needle in compact or bool(re.search(r'(?<![\w])chr'+re.escape(identity['chrom'])+r':\s*'+str(identity['pos'])+r'\s*'+re.escape(identity['ref'])+r'\s*>\s*'+re.escape(identity['alt'])+r'(?![ACGT\w])',text)))
+        exact=route_match is not None and route_match[1]==needle and visible_allele and build37 and not build38
+        ready=bool(re.search(r'Suggested classification|Computed classification|ACMG classification|Oncogenic classification|Oncogenicity|Somatic Clinical Evidence',text,re.I))
         identity_method='Franklin GRCh37/hg19 + eksakt variant-rute + synlig VCF-allel'
     elif provider=='oncokb':
         hgvs=genomic_hgvs(variant);route_match=re.search(r'/hgvsg/([^?#]+)',route)
@@ -183,12 +184,15 @@ def parse_portal_snapshot(provider,variant,snapshot):
     else:return {**result,'status':'unsupported','summary':'Ingen kontrollert portaluttrekker for denne kilden.'}
     if not exact:
         result['summary']='Portalen kunne ikke bekrefte eksakt referansebygg, posisjon og allel. Ingen klassifikasjon ble brukt.';return result
+    result={**result,'identity_verified':True,'identity_method':identity_method}
     if re.search(r'variant not found|no variants? found|no matching variant',text,re.I):
         return {**result,'status':'not_found','summary':'Portalen rapporterte ingen variant for det identitetskontrollerte søket. Dette betyr ikke benign.'}
     if not ready:return result
     classifications=_labelled_classifications(provider,text)
     readable_page=(provider=='oncokb' and snapshot.get('oncokb_result_visible') is True
                    and 'Clinical Implications for this Biomarker' in text)
+    readable_page=readable_page or (provider=='franklin' and snapshot.get('franklin_result_visible') is True
+                                  and 'Somatic Clinical Evidence' in text and 'AMP Classification' in text)
     if provider!='cosmic' and not classifications and not readable_page:return result
     levels=_labelled_levels(text)
     excerpt=[label+': '+value for label,value in classifications+levels]
@@ -426,6 +430,7 @@ class _EdgeContext:
             challenge_visible:Array.from(document.querySelectorAll('iframe[src*="/recaptcha/"][src*="/bframe"],iframe[title*="challenge" i]')).some(visible),
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
+            franklin_result_visible:location.hostname==='franklin.genoox.com'&&Array.from(document.querySelectorAll('gnx-result-page,gnx-oncogenic-classification-app,[role=tabpanel]')).some(visible),
             mtbp_form:Array.from(document.querySelectorAll('#variant-input')).some(visible),
             oncokb_account_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('header #account-menu')).some(visible),
             oncokb_result_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('h1')).some(x=>visible(x)&&/\\bABL1\\b/.test(x.innerText||''))&&Array.from(document.querySelectorAll('#clinical-implications')).some(visible),
@@ -459,12 +464,27 @@ class _EdgeContext:
           control.click();return true;
         })()""")
 
-    def capture_png(self,path):
-        result=self._page_call('Page.captureScreenshot',{'format':'png','captureBeyondViewport':False,'fromSurface':True})
+    def evidence_views(self,provider):
+        from .browser_evidence import evidence_views
+        return evidence_views(self,provider)
+
+    def capture_png(self,path,*,clip=None):
+        import io,math
+        from PIL import Image,ImageStat
+        options={'format':'png','captureBeyondViewport':clip is not None,'fromSurface':True}
+        if clip is not None:
+            if not isinstance(clip,dict) or not all(isinstance(clip.get(k),(int,float)) and math.isfinite(clip[k]) for k in ('x','y','width','height')):raise ValueError('Ugyldig bildeutsnitt.')
+            if clip['x']<0 or clip['y']<0 or not 200<=clip['width']<=4000 or not 80<=clip['height']<=8000 or clip['width']*clip['height']>16_000_000:raise ValueError('Bildeutsnittet er for stort eller lite.')
+            options['clip']={**clip,'scale':1}
+        result=self._page_call('Page.captureScreenshot',options)
         value=result.get('data','')
         if not isinstance(value,str) or len(value)>28_000_000:raise ValueError('Databasebildet er for stort.')
         image=base64.b64decode(value,validate=True)
         if not image.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Ugyldig databasebilde.')
+        with Image.open(io.BytesIO(image)) as source:source.verify()
+        with Image.open(io.BytesIO(image)) as source:
+            if source.width<200 or source.height<80 or source.width*source.height>16_000_000:raise ValueError('Databasebildet har ugyldige dimensjoner.')
+            if ImageStat.Stat(source.convert('L').resize((200,100))).stddev[0]<1:raise ValueError('Databasebildet er tomt.')
         Path(path).write_bytes(image)
 
     def fill_login(self,provider,email,password):
@@ -670,24 +690,31 @@ class PortalBrowser:
     def _capture(self,provider,variant,context,result):
         from .workflow import allele_key
         if not hasattr(context,'capture_png'):return self._capture_error(result,'capture_unsupported','Nettleseren støtter ikke bildeuttak.')
-        path=None
+        path=None;updated=dict(result);records=[]
         try:
             problem=self._capture_problem(provider,variant,context.snapshot() or {})
             if problem:return self._capture_error(result,*problem)
             root=self.data_dir/'evidence/databases'/allele_key(variant);root.mkdir(parents=True,exist_ok=True)
-            path=root/(provider+'-'+uuid.uuid4().hex+'.png')
-            context.capture_png(path)
-            snapshot=context.snapshot() or {}
-            problem=self._capture_problem(provider,variant,snapshot)
-            if problem:
-                path.unlink(missing_ok=True)
-                return self._capture_error(result,*problem)
-            updated={**result,'screenshot':str(path),'identity_verified':True}
+            views=context.evidence_views(provider) if hasattr(type(context),'evidence_views') else [('Variantresultat',None)]
+            for label,clip in views:
+                problem=self._capture_problem(provider,variant,context.snapshot() or {})
+                if problem:return self._capture_error(updated,*problem)
+                path=root/(provider+'-'+uuid.uuid4().hex+'.png')
+                if clip is None:context.capture_png(path)
+                else:context.capture_png(path,clip=clip)
+                snapshot=context.snapshot() or {}
+                problem=self._capture_problem(provider,variant,snapshot)
+                if problem:
+                    path.unlink(missing_ok=True);return self._capture_error(updated,*problem)
+                captured=datetime.now(timezone.utc).isoformat()
+                records.append({'label':str(label),'path':str(path),'url':snapshot.get('url',''),'captured_at':captured})
+                updated={**updated,'screenshot':records[0]['path'],'screenshots':list(records),'captured_at':captured,'identity_verified':True}
+                path=None
             updated.pop('screenshot_error',None);updated.pop('screenshot_reason',None)
             return updated
         except (OSError,ValueError,RuntimeError,TimeoutError):
             if path is not None:path.unlink(missing_ok=True)
-            return self._capture_error(result,'capture_failed','Databasebildet kunne ikke hentes. Prøv «Hent bilder fra åpne sider» når siden er ferdig.')
+            return self._capture_error(updated,'partial_capture' if records else 'capture_failed','Noen databasebilder mangler. Prøv «Hent bilder fra åpne sider» når siden er ferdig.' if records else 'Databasebildet kunne ikke hentes. Prøv «Hent bilder fra åpne sider» når siden er ferdig.')
 
     @staticmethod
     def _capture_error(result,reason,message):
@@ -750,6 +777,7 @@ class PortalBrowser:
                     parsed=parse_portal_snapshot(provider,variant,snapshot)
                     if parsed.get('status')=='found' and parsed.get('identity_verified') is True:
                         result={**result,**parsed}
+                    else:return self._capture_error(result,'page_not_ready','Variantresultatet er ikke ferdig. Vent eller kjør oppslaget på nytt.')
                 return self._capture(provider,variant,context,result)
             if problem[0]=='login_required':break
             if provider=='clinvar' and problem[0]=='identity_mismatch' and not expansion_attempted:
@@ -806,13 +834,20 @@ class PortalBrowser:
             else:url='https://cancer.sanger.ac.uk/cosmic/search?q='+quote('ABL1 '+str(variant.get('cdna','')))
             context.navigate(url)
             timeout=min(max(float(settings.get('browser_timeout_seconds',30)),5),90)
-            deadline=time.monotonic()+timeout;result=None
+            deadline=time.monotonic()+timeout;result=None;login_attempted=False;query_retried=False
             while time.monotonic()<deadline:
                 snapshot=context.snapshot() or {}
-                self._record_status(provider,context,login_status(provider,snapshot))
+                auth=self._record_status(provider,context,login_status(provider,snapshot))
                 result=parse_portal_snapshot(provider,variant,snapshot)
                 if result['status']=='found':return self._capture(provider,variant,context,result)
-                if result['status'] in {'not_found','login_required','license_required'}:return result
+                if result['status']=='login_required':
+                    if not login_attempted:
+                        login_attempted=True
+                        if not self._saved_login(provider,context):return result
+                    time.sleep(.5);continue
+                if login_attempted and not query_retried and auth.get('status')=='logged_in':
+                    context.navigate(url);query_retried=True;time.sleep(.5);continue
+                if result['status'] in {'not_found','license_required'}:return result
                 if provider=='cosmic' and hasattr(context,'evaluate'):
                     # Only follow a specific mutation-result link, never a login,
                     # download, report creation, acceptance, or account action.

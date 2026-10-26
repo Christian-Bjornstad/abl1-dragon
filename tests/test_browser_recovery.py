@@ -197,7 +197,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(list(self.root.rglob('*.png')), [])
 
     def test_page_changed_after_capture_discards_written_picture(self):
-        page = Page([PAGE, {**PAGE, 'text': 'NC_000009.11:g.133748283C>G'}])
+        page = Page([PAGE, PAGE, {**PAGE, 'text': 'NC_000009.11:g.133748283C>G'}])
         result = self.browser._capture('clinvar', V, page, self.result())
         self.assertEqual(result['screenshot_reason'], 'identity_mismatch')
         self.assertEqual(page.captures, 1)
