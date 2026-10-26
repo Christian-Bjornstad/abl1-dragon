@@ -48,6 +48,12 @@ def _provider_page(provider,url):
     except (TypeError,ValueError):return False
 
 
+def _clinvar_record_path(url):
+    if not _provider_page('clinvar',url):return None
+    path=urlsplit(url).path
+    return path.rstrip('/') if re.fullmatch(r'/clinvar/variation/[0-9]+/?',path) else None
+
+
 def login_status(provider,snapshot):
     """An open window or a saved profile does not prove a current login."""
     result={'status':'unknown','summary':'Innlogging ikke bekreftet','checked_at':datetime.now(timezone.utc).isoformat()}
@@ -222,14 +228,14 @@ class _WebSocketConnection:
             message={'id':identifier,'method':method,'params':params or {}}
             if session_id:message['sessionId']=session_id
             try:self._socket.send(json.dumps(message,separators=(',',':')))
-            except self._closed_error:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
+            except (ConnectionError,self._closed_error):raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
             except self._connection_error:raise RuntimeError('Edge-forespørselen kunne ikke sendes.') from None
             deadline=time.monotonic()+timeout
             while time.monotonic()<deadline:
                 self._socket.settimeout(max(.01,deadline-time.monotonic()))
                 try:raw=self._socket.recv()
                 except (TimeoutError,self._timeout_error):raise TimeoutError('Edge svarte ikke innen tidsgrensen.') from None
-                except self._closed_error:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
+                except (ConnectionError,self._closed_error):raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.') from None
                 except self._connection_error:raise RuntimeError('Edge-vinduet eller forbindelsen ble lukket.') from None
                 if not raw:raise _BrowserConnectionClosed('Edge-forbindelsen ble lukket.')
                 if len(raw)>8*1024*1024:raise RuntimeError('Edge-svaret er for stort.')
@@ -419,6 +425,30 @@ class _EdgeContext:
         })()""")
 
     def auth_snapshot(self):return self.snapshot(auth_only=True)
+
+    def expand_clinvar_hgvs(self,expected_url):
+        """Reveal ClinVar's hidden HGVS rows using only its read-only toggle.
+
+        A trusted API result supplies the numeric record path. Recheck it in
+        the page to protect against navigation between snapshot and click.
+        """
+        path=_clinvar_record_path(expected_url)
+        if path is None:return False
+        return self.evaluate("""(()=>{
+          const page=new URL(location.href);
+          if(page.protocol!=='https:'||page.hostname!=='www.ncbi.nlm.nih.gov'||page.port||page.username||page.password||page.pathname.replace(/\\/$/,'')!=="""+json.dumps(path)+""")return false;
+          const visible=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>0;};
+          const controls=[...document.querySelectorAll('[id="hgvs_more"]')];
+          if(controls.length!==1)return false;
+          const control=controls[0];
+          if(!visible(control)||control.tagName!=='A'||control.closest('form')||! /^(?:\\.{3}|…)?\\s*more\\s+HGVS$/i.test((control.innerText||'').trim()))return false;
+          const href=(control.getAttribute('href')||'').trim();
+          if(href&&!href.startsWith('#')&&!/^javascript:\\s*void\\(0\\);?$/i.test(href))return false;
+          // The expected toggle only reveals text. Suppress its fragment/default
+          // link action; never navigate or click a verification control.
+          control.addEventListener('click',event=>event.preventDefault(),{once:true});
+          control.click();return true;
+        })()""")
 
     def capture_png(self,path):
         result=self._page_call('Page.captureScreenshot',{'format':'png','captureBeyondViewport':False,'fromSurface':True})
@@ -702,7 +732,7 @@ class PortalBrowser:
                 return self._capture_error(result,'connection_unavailable','Edge-forbindelsen er utilgjengelig. Åpne kilden på nytt og prøv igjen.')
 
     def _wait_capture(self,provider,variant,context,result):
-        deadline=time.monotonic()+20;problem=None
+        deadline=time.monotonic()+20;problem=None;expansion_attempted=False
         while time.monotonic()<deadline:
             snapshot=context.snapshot() or {}
             problem=self._capture_problem(provider,variant,snapshot)
@@ -712,7 +742,14 @@ class PortalBrowser:
                     if parsed.get('status')=='found' and parsed.get('identity_verified') is True:
                         result={**result,**parsed}
                 return self._capture(provider,variant,context,result)
-            if problem[0] in {'manual_check_required','login_required'}:break
+            if problem[0]=='login_required':break
+            if provider=='clinvar' and problem[0]=='identity_mismatch' and not expansion_attempted:
+                expected=_clinvar_record_path(result.get('url',''))
+                if expected and expected==_clinvar_record_path(snapshot.get('url','')) and hasattr(context,'expand_clinvar_hgvs'):
+                    expansion_attempted=True
+                    context.expand_clinvar_hgvs(result['url'])
+            # NCBI's automatic browser check often clears by itself. Passive
+            # waiting stays inside the same budget and never solves a challenge.
             time.sleep(.5)
         return self._capture_error(result,*(problem or ('page_not_ready','Databasesiden ble ikke ferdig. Prøv «Hent bilder fra åpne sider».')))
 

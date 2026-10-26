@@ -38,6 +38,16 @@ class Page:
         Path(path).write_bytes(b'\x89PNG\r\n\x1a\nsynthetic')
 
 
+def loopback_connection(failed_operation, error):
+    """Real transport wrapper; the synthetic socket never opens a listener."""
+    socket = Mock()
+    socket.recv.return_value = json.dumps({'id': 1, 'result': {'targetInfos': []}})
+    getattr(socket, failed_operation).side_effect = error
+    with patch('socket.create_connection', return_value=Mock()), patch('websocket.create_connection', return_value=socket):
+        connection = browser_module._WebSocketConnection('ws://127.0.0.1:12345/devtools/browser/12345678-abcd-1234-abcd-123456789012', 12345)
+    return connection, socket
+
+
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -86,11 +96,55 @@ class RecoveryTests(unittest.TestCase):
     def test_retry_captcha_stops_without_capture_and_preserves_api_classification(self):
         page = Page([{**PAGE, 'text': PAGE['text'] + '\nVerify you are human CAPTCHA'}])
         self.browser._contexts['clinvar'] = page
-        with patch.object(browser_module.time, 'sleep'):
+        with patch.object(browser_module.time, 'sleep'), patch.object(browser_module.time, 'monotonic', side_effect=[0, 0, 21]):
             result = self.browser.recapture_result('clinvar', V, {**self.result(), 'classification': 'Pathogenic'})
         self.assertEqual(result['screenshot_reason'], 'manual_check_required')
         self.assertEqual(result['classification'], 'Pathogenic')
         self.assertEqual(page.captures, 0)
+
+    def test_transient_browser_check_waits_for_automatic_load_then_captures(self):
+        page = Page([{'url': URL, 'text': 'Checking your browser before accessing www.ncbi.nlm.nih.gov ...'}, PAGE, PAGE, PAGE])
+        self.browser._contexts['clinvar'] = page
+        with patch.object(browser_module.time, 'sleep'), patch.object(browser_module.time, 'monotonic', side_effect=[0, 0, 1]):
+            result = self.browser.recapture_result('clinvar', V, self.result())
+        self.assertTrue(Path(result['screenshot']).is_file())
+        self.assertEqual(page.captures, 1)
+        self.assertEqual(page.navigations, [])
+
+    def test_clinvar_expands_hidden_hgvs_once_then_requires_exact_genomic_allele(self):
+        for visible in (PAGE, {**PAGE, 'text': 'NC_000009.12:g.133748283C>T'}):
+            class CollapsedPage(Page):
+                def __init__(self):
+                    super().__init__([]); self.expansions = []
+                    self.current = {'url': URL, 'text': 'NM_005157.6:c.944C>T\n... more HGVS'}
+                def expand_clinvar_hgvs(self, expected_url):
+                    self.expansions.append(expected_url); self.current = visible
+                    return True
+            page = CollapsedPage()
+            self.browser._contexts['clinvar'] = page
+            with patch.object(browser_module.time, 'sleep'), patch.object(browser_module.time, 'monotonic', side_effect=[0, 0, 1, 2, 21]):
+                result = self.browser.recapture_result('clinvar', V, self.result())
+            self.assertEqual(page.expansions, [URL])
+            self.assertEqual(page.navigations, [])
+            if visible == PAGE:
+                self.assertTrue(Path(result['screenshot']).is_file())
+                self.assertEqual(page.captures, 1)
+            else:
+                self.assertEqual(result['screenshot_reason'], 'identity_mismatch')
+                self.assertEqual(page.captures, 0)
+
+    def test_clinvar_expansion_never_runs_on_another_record_or_challenge(self):
+        for snapshot in ({'url': URL.replace('12624', '999'), 'text': '... more HGVS'},
+                         {'url': URL, 'text': 'Checking your browser\n... more HGVS'}):
+            class GuardedPage(Page):
+                def expand_clinvar_hgvs(self, expected_url):
+                    raise AssertionError('must not click controls here')
+            page = GuardedPage([snapshot])
+            self.browser._contexts['clinvar'] = page
+            with patch.object(browser_module.time, 'sleep'), patch.object(browser_module.time, 'monotonic', side_effect=[0, 0, 21]):
+                result = self.browser.recapture_result('clinvar', V, self.result())
+            self.assertNotIn('screenshot', result)
+            self.assertEqual(page.captures, 0)
 
     def test_manual_login_resume_parses_current_portal_result_and_captures_without_navigation(self):
         url = 'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37'
@@ -173,6 +227,60 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(browser_module._BrowserTargetClosed):
             connection.call('Runtime.evaluate', {'expression': '1'}, session_id='detached')
 
+    def test_aborted_reset_or_broken_socket_send_is_definitively_closed(self):
+        for error in (ConnectionAbortedError(10053, 'established connection aborted'),
+                      ConnectionResetError(10054, 'connection reset'), BrokenPipeError('broken pipe')):
+            with self.subTest(error=type(error).__name__):
+                connection, _ = loopback_connection('send', error)
+                with self.assertRaises(browser_module._BrowserConnectionClosed):
+                    connection.call('Target.getTargets')
+                connection.close()
+
+    def test_aborted_reset_or_broken_socket_receive_is_definitively_closed(self):
+        for error in (ConnectionAbortedError(10053, 'established connection aborted'),
+                      ConnectionResetError(10054, 'connection reset'), BrokenPipeError('broken pipe')):
+            with self.subTest(error=type(error).__name__):
+                connection, _ = loopback_connection('recv', error)
+                with self.assertRaises(browser_module._BrowserConnectionClosed):
+                    connection.call('Target.getTargets')
+                connection.close()
+
+    def test_socket_timeout_or_other_os_error_keeps_health_inconclusive(self):
+        for operation in ('send', 'recv'):
+            for error in (TimeoutError('temporary'), OSError(10048, 'temporary socket state')):
+                with self.subTest(operation=operation, error=type(error).__name__):
+                    context = _EdgeContext.__new__(_EdgeContext)
+                    context._connection, _ = loopback_connection(operation, error)
+                    context._target = 'original'; context._session = 'session'
+                    self.assertIsNone(context.is_alive())
+                    context._connection.close()
+
+    def test_aborted_owned_connection_is_closed_then_reopened_with_same_profile(self):
+        for operation in ('send', 'recv'):
+            with self.subTest(operation=operation):
+                context = _EdgeContext.__new__(_EdgeContext)
+                context.profile = self.root / 'PortalProfiler' / 'oncokb'
+                context._target = 'old-target'; context._session = 'old-session'
+                context._process = None; context._lease = None; context._startup_stderr = None
+                context._connection, socket = loopback_connection(operation, ConnectionAbortedError(10053, 'connection aborted'))
+                self.browser._contexts['oncokb'] = context
+                self.browser.edge = Mock()
+                self.browser.edge.diagnostics.return_value = {}
+                self.browser.edge.executable_path.return_value = self.root / 'msedge.exe'
+                opened = []
+                def factory(executable, profile):
+                    opened.append((executable, profile)); return Page([])
+                self.browser._context_factory = factory
+                with patch.object(browser_module, 'debugging_policy', return_value=None):
+                    self.assertEqual(self.browser.status('oncokb')['status'], 'closed')
+                    self.browser.open_login('oncokb')
+                replacement = self.browser._contexts['oncokb']
+                self.assertEqual(opened, [(self.root / 'msedge.exe', context.profile)])
+                self.assertEqual(replacement.navigations, ['https://www.oncokb.org/login'])
+                self.assertIsNone(context._connection)
+                self.assertTrue(socket.close.called)
+                self.browser._discard('oncokb')
+
     def test_explicit_open_recovers_missing_owned_tab_without_claiming_unrelated_page(self):
         context = _EdgeContext.__new__(_EdgeContext)
         context.profile = self.root / 'PortalProfiler' / 'clinvar'
@@ -234,6 +342,34 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('msImplicitSignin', features)
         self.assertNotIn('--ignore-certificate-errors', args)
         self.assertNotIn('--disable-web-security', args)
+
+
+@unittest.skipUnless(shutil.which('node'), 'Synthetic JavaScript DOM requires Node')
+class ClinvarExpansionScriptTests(unittest.TestCase):
+    def test_only_unique_visible_more_hgvs_control_on_same_record_is_clicked(self):
+        context = _EdgeContext.__new__(_EdgeContext)
+        scripts = []
+        context.evaluate = lambda expression: scripts.append(expression)
+        context.expand_clinvar_hgvs(URL)
+        harness = r'''
+const fs=require('fs'), input=JSON.parse(fs.readFileSync(0,'utf8'));
+global.location=new URL(input.url);let clicks=0;
+global.getComputedStyle=()=>({visibility:'visible',display:'block',opacity:'1'});
+const control={tagName:'A',innerText:input.caption,getBoundingClientRect:()=>({width:input.hidden?0:100,height:20}),getAttribute:name=>name==='href'?input.href:null,closest:()=>null,addEventListener:()=>{},click:()=>clicks++};
+global.document={querySelectorAll:()=>input.duplicate?[control,control]:[control]};
+const result=eval(input.script);console.log(JSON.stringify({result,clicks}));
+'''
+        cases = [({}, True), ({'url': URL.replace('12624', '999')}, False),
+                 ({'url': 'https://evil.invalid/clinvar/variation/12624/'}, False),
+                 ({'href': 'https://evil.invalid/'}, False), ({'caption': 'Solve CAPTCHA'}, False),
+                 ({'duplicate': True}, False), ({'hidden': True}, False)]
+        for options, allowed in cases:
+            with self.subTest(options=options):
+                payload = dict(script=scripts[0], url=URL, caption='... more HGVS', href='#', duplicate=False, hidden=False)
+                payload.update(options)
+                completed = subprocess.run([shutil.which('node'), '-e', harness], input=json.dumps(payload),
+                                           text=True, capture_output=True, timeout=10, check=True)
+                self.assertEqual(json.loads(completed.stdout), {'result': allowed, 'clicks': int(allowed)})
 
 
 @unittest.skipUnless(shutil.which('node'), 'Synthetic JavaScript DOM requires Node')
