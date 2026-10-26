@@ -1,7 +1,7 @@
 """One worksheet per selected sample/allele, with local evidence images."""
 from datetime import datetime
 from pathlib import Path
-import math,os,re,tempfile
+import hashlib,math,os,re,tempfile
 from urllib.parse import urlsplit
 from . import APP_NAME,__version__
 from .models import flags
@@ -62,6 +62,44 @@ def screenshot_records(result):
     if result.get('screenshot') and str(result['screenshot']) not in seen:
         records.insert(0,{'path':str(result['screenshot']),'label':'Variantresultat'})
     return records
+
+
+def sample_report_paths(rows,destination):
+    """Exactly one output per sample; never use a sample value as a path."""
+    samples=list(dict.fromkeys(str(row.get('sample') or '') for row in rows))
+    if not samples:raise ValueError('Merk minst én variant før eksport.')
+    if any(not sample for sample in samples):raise ValueError('Prøvenavn mangler i valgt variant.')
+    destination=Path(destination)
+    if destination.suffix.lower()=='.xlsx':
+        if len(samples)!=1:raise ValueError('Velg en mappe for separate Excel-filer per prøve.')
+        return {samples[0]:destination}
+    paths={};used=set();suffix='_DRAGEN_Resultater.xlsx'
+    for sample in samples:
+        base=re.sub(r'[<>:"/\\|?*\x00-\x1f]','_',sample).strip(' .') or 'Prøve'
+        if re.fullmatch(r'(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?',base,re.I):base='_'+base
+        base=base[:120].rstrip(' .');candidate=base+suffix
+        if candidate.casefold() in used:
+            candidate=base[:105]+'_'+hashlib.sha256(sample.encode()).hexdigest()[:12]+suffix
+        used.add(candidate.casefold());paths[sample]=destination/candidate
+    return paths
+
+
+def export_sample_reports(session,rows,lookup_results,destination,**options):
+    rows=list(rows);paths=sample_report_paths(rows,destination)
+    # Construct all workbooks before replacing any existing report. A failure
+    # while building one sample must not replace earlier samples' workbooks.
+    staged=[]
+    try:
+        for sample,path in paths.items():
+            path.parent.mkdir(parents=True,exist_ok=True)
+            descriptor,temporary=tempfile.mkstemp(prefix='.DRAGEN-sample-',suffix='.xlsx',dir=path.parent);os.close(descriptor)
+            staged.append((Path(temporary),path))
+            sample_rows=[v for v in rows if str(v.get('sample') or '')==sample]
+            export_report(session,sample_rows,lookup_results,temporary,**options)
+        for temporary,path in staged:os.replace(temporary,path)
+    finally:
+        for temporary,_ in staged:temporary.unlink(missing_ok=True)
+    return list(paths.values())
 
 def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnomad','cosmic','oncokb','franklin'),samples=None,selection='',igv_images=None,igv_errors=None):
     from openpyxl import Workbook

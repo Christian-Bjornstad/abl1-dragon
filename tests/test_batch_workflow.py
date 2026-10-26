@@ -43,15 +43,16 @@ class BatchWorkflowTests(unittest.TestCase):
             viewer.current_alignment=alignment;viewer.save_image_button.setEnabled(True);captured.append((alignment.sample,variant['sample']))
         def capture(path,callback):
             image=QImage(160,100,QImage.Format.Format_RGB32);image.fill(QColor('gray'));image.save(str(path));callback(str(path),None)
-        path=self.folder/'selected.xlsx'
+        path=self.folder/'exports'
         with patch.object(viewer,'show_alignment',side_effect=show),patch.object(viewer,'capture_png',side_effect=capture):
             w.start_export(path);self.finish()
         self.assertEqual(captured,[('DEMO-A','DEMO-A'),('Other','Other')])
-        book=load_workbook(path);self.assertEqual(len(book.worksheets),2)
-        self.assertEqual([len(s._images) for s in book.worksheets],[1,1]);book.close()
+        books=[load_workbook(p) for p in sorted(path.glob('*.xlsx'))];self.assertEqual(len(books),2)
+        self.assertEqual([len(book.worksheets[0]._images) for book in books],[1,1])
+        for book in books:self.assertEqual(book.sheetnames,['T315I']);book.close()
         self.assertEqual(w.pages.currentIndex(),0)
     def test_cancelled_export_never_creates_a_partial_workbook(self):
-        w=self.window;w.mark_visible();path=self.folder/'cancelled.xlsx'
+        w=self.window;w.mark_visible();path=self.folder/'cancelled'
         w.start_export(path);w.cancel_export();self.app.processEvents()
         self.assertFalse(path.exists());self.assertIsNone(w._export);self.assertFalse(w.loading)
 

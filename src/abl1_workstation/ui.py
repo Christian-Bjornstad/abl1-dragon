@@ -11,7 +11,7 @@ from . import APP_NAME
 from .domain import ReviewStore,load_inputs,resource_root
 from .models import VariantModel,VariantFilter
 from .workflow import allele_key,row_key
-from .report import export_report,PROVIDER_NAMES
+from .report import export_sample_reports,sample_report_paths,PROVIDER_NAMES
 from .database_browser import EdgeBrowser
 from .lookup_browser import PortalBrowser
 from .settings import Settings,SettingsPanel
@@ -325,12 +325,24 @@ class MainWindow(QMainWindow):
 
     def export_excel_dialog(self):
         if not self.session or not self.variant_model.selected_rows() or self.loading:return
-        path,_=QFileDialog.getSaveFileName(self,'Eksporter Excel','DRAGEN_resultater.xlsx','Excel (*.xlsx)')
-        if path:self.start_export(path if path.lower().endswith('.xlsx') else path+'.xlsx')
+        rows=self.variant_model.selected_rows();names=sample_report_paths(rows,Path('.'))
+        if len(names)==1:
+            suggested=next(iter(names.values())).name
+            path,_=QFileDialog.getSaveFileName(self,'Eksporter Excel',suggested,'Excel (*.xlsx)')
+            if path:self.start_export(path if path.lower().endswith('.xlsx') else path+'.xlsx')
+        else:
+            folder=QFileDialog.getExistingDirectory(self,'Velg mappe for Excel-filer per prøve')
+            if not folder:return
+            paths=sample_report_paths(rows,folder);existing=[p.name for p in paths.values() if p.exists()]
+            if existing:
+                answer=QMessageBox.question(self,APP_NAME,'Erstatt eksisterende rapporter?\n'+'\n'.join(existing),QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
+                if answer!=QMessageBox.StandardButton.Yes:return
+            self.start_export(folder)
 
     def start_export(self,path):
         rows=[dict(v) for v in self.variant_model.selected_rows()]
         if not rows or self.loading:return
+        sample_report_paths(rows,path)
         self._export={'path':path,'rows':rows,'queue':list(rows),'images':{},'errors':{},'current':None}
         self.loading=True;self.progress.show();self.cancel_export_button.show();self._update_actions()
         self.pages.setCurrentIndex(1)
@@ -351,9 +363,10 @@ class MainWindow(QMainWindow):
             self.igv_title.setText(self.variant_title.text());self.read_viewer.clear()
             self.navigate(0)
             def operation():
-                export_report(self.session,job['rows'],self.lookup_results,job['path'],providers=tuple(self.settings.providers),igv_images=job['images'],igv_errors=job['errors'])
-                return len(job['rows'])
-            self._start_task(operation,lambda n:self.log_event(f'Excel lagret: {n} variantark · '+str(job['path'])),'Lagrer Excel …')
+                return export_sample_reports(self.session,job['rows'],self.lookup_results,job['path'],providers=tuple(self.settings.providers),igv_images=job['images'],igv_errors=job['errors'])
+            def saved(paths):
+                for path in paths:self.log_event('Excel lagret: '+str(path))
+            self._start_task(operation,saved,'Lagrer Excel per prøve …')
             return
         variant=self._export['queue'].pop(0);self._export['current']=variant
         self.igv_title.setText(f"{variant['sample']} · {variant.get('protein_snv_alone') or variant.get('cdna') or variant['pos']}")
