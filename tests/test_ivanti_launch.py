@@ -27,13 +27,13 @@ class IvantiLaunchTests(unittest.TestCase):
     def invoke(self,*,clipboard=0,legacy=False,action='START_DRAGEN.cmd'):
         with tempfile.TemporaryDirectory(prefix="DRAGEN launch O'Neil & Å ") as directory:
             folder=Path(directory);receipt=folder/'receipt'
-            target=folder/'RES Software/Workspace Manager/pwrgate.exe' if legacy else folder/'pwrgate.exe'
+            target=folder/'Ivanti override/pwrgate.exe' if legacy else folder/'pwrgate.exe'
             target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(self.stub,target)
             env={**os.environ,'PATH':str(self.folder)+os.pathsep+os.environ['PATH'],'ABL1_NO_PAUSE':'1',
                  'DRAGEN_TEST_RECEIPT':str(receipt),'DRAGEN_TEST_CLIPBOARD_EXIT':str(clipboard)}
             env.pop('DRAGEN_LOCAL_PYTHON',None);env.pop('ABL1_IVANTI_APP_ID',None)
-            if legacy:
-                env.pop('ABL1_IVANTI',None);env['ProgramFiles(x86)']=str(folder);env['ProgramFiles']=str(folder)
+            env.pop('DRAGEN_IVANTI',None)
+            if legacy:env['DRAGEN_IVANTI']=str(target)
             else:env['ABL1_IVANTI']=str(target)
             result=subprocess.run(f'cmd.exe /d /s /c ""{ROOT/action}""',env=env,capture_output=True,timeout=15)
             record=Path(str(receipt)+'.pwrgate.exe');deadline=time.monotonic()+5
@@ -53,11 +53,11 @@ class IvantiLaunchTests(unittest.TestCase):
             self.assertTrue(Path(str(receipt)+'.powershell.exe').exists())
             return result
     def test_start_launches_ivanti_with_molstat_id(self):self.assertEqual(self.invoke().returncode,0)
-    def test_install_discovers_legacy_res_path(self):self.assertEqual(self.invoke(legacy=True,action='INSTALL_DRAGEN.cmd').returncode,0)
+    def test_install_uses_explicit_ivanti_override(self):self.assertEqual(self.invoke(legacy=True,action='INSTALL_DRAGEN.cmd').returncode,0)
     def test_clipboard_failure_still_opens_ivanti_and_prints_manual_command(self):
         result=self.invoke(clipboard=1)
         self.assertEqual(result.returncode,1)
-        self.assertIn(b'Ivanti er startet',result.stderr)
+        self.assertIn(b'Python FELLES was requested',result.stdout)
         self.assertIn(b'import runpy;',result.stdout)
 
 if __name__=='__main__':unittest.main()

@@ -32,17 +32,47 @@ class FellesTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         return json.loads(result.stdout.splitlines()[-1])
     def test_missing_offline_wheels_never_creates_target(self):
-        result=self.invoke("f['install'](root)")
+        result=self.invoke("f['install'](root,offline=True)")
         self.assertNotEqual(result.returncode,0);self.assertIn('wheelhouse',result.stderr)
         self.assertFalse((self.root/'.felles-packages').exists())
+    def test_github_source_without_wheelhouse_installs_online_in_same_interpreter(self):
+        (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
+        code=("calls=[]\n"
+              "def fake_pip(args):\n"
+              " calls.append(args)\n"
+              " target=Path(args[args.index('--target')+1]);dist=target/'pip-test.dist-info';dist.mkdir()\n"
+              " (dist/'METADATA').write_text('Name: pip\\nVersion: "+ensurepip.version()+"\\n')\n"
+              " return 0\n"
+              "result=f['install'](root,pip_main=fake_pip)\n"
+              "assert result==0\nassert len(calls)==1\n"
+              "assert '--no-index' not in calls[0]\nassert '--find-links' not in calls[0]\n"
+              "assert '--no-user' in calls[0] and '--no-deps' in calls[0]\n"
+              "assert f['package_dir'](root).is_dir()\nprint('source-install-ok')")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('source-install-ok',result.stdout)
     def test_missing_packages_does_not_fall_back_to_global_qt(self):
         result=self.invoke("f['package_dir'](root).mkdir(parents=True)\nf['activate'](root)")
         self.assertNotEqual(result.returncode,0);self.assertIn('Mangler lokale',result.stderr)
     def test_partial_target_is_preserved_and_not_overwritten(self):
         (self.root/'wheelhouse').mkdir()
-        result=self.invoke("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\nf['install'](root)")
-        self.assertNotEqual(result.returncode,0);self.assertIn('Ufullstendig',result.stderr)
+        result=self.invoke("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\nf['install'](root,pip_main=lambda args:7)")
+        self.assertNotEqual(result.returncode,0);self.assertIn('Pakkeinstallasjonen feilet',result.stderr)
         self.assertEqual(next((self.root/'.felles-packages').rglob('bevar.txt')).read_text(),'bevar')
+    def test_repair_preserves_old_packages_and_ignores_an_abandoned_install_folder(self):
+        (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
+        code=("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\n"
+              "stale=t.with_name(t.name+'.installing');stale.mkdir();(stale/'old.txt').write_text('keep')\n"
+              "def fake_pip(args):\n"
+              " target=Path(args[args.index('--target')+1]);dist=target/'pip-test.dist-info';dist.mkdir()\n"
+              " (dist/'METADATA').write_text('Name: pip\\nVersion: "+ensurepip.version()+"\\n')\n"
+              " return 0\n"
+              "assert f['install'](root,pip_main=fake_pip)==0\n"
+              "assert not (t/'bevar.txt').exists()\n"
+              "assert list(t.parent.glob(t.name+'.previous-*/bevar.txt'))[0].read_text()=='bevar'\n"
+              "assert (stale/'old.txt').read_text()=='keep'\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
     def test_loaded_qt_blocks_install(self):
         result=self.invoke("sys.modules['PyQt6']=object()\nf['install'](root)")
         self.assertNotEqual(result.returncode,0);self.assertIn('nytt Python FELLES',result.stderr)

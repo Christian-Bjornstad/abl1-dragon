@@ -7,9 +7,13 @@ Mappeimport, variantutvalg, lokal IGV, databaseoppslag og Excel med ett ark per 
 
 Krever Python 3.12–3.14, 64 bit.
 
-1. Last ned og pakk ut [offline-pakken](https://github.com/Christian-Bjornstad/abl1-dragon/releases/latest).
+1. Last ned hele [main-branchen](https://github.com/Christian-Bjornstad/abl1-dragon/archive/refs/heads/main.zip) og pakk ut.
 2. Kjør **INSTALL_DRAGEN.cmd**.
 3. Kjør **START_DRAGEN.cmd**.
+
+Start og installasjon følger PRONTOs Python FELLES-mønster. På jobb-PC åpnes FELLES via
+Ivanti; lim inn med Ctrl+V og trykk Enter. Ved installasjon fra kildekoden hentes de låste
+pakkene automatisk. Lukk FELLES etter installasjon før appen startes i et nytt vindu.
 
 [Installasjon, Python FELLES og Edge](docs/INSTALL.md).
 [Første test på jobb-PC](docs/JOBBPC_TEST.md).

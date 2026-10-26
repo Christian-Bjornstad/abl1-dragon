@@ -1,69 +1,57 @@
-# Installasjon og start
+# Installer og start fra GitHub
 
-Pakk ut hele DRAGEN-mappen til et fast, skrivbart sted.
+Last ned hele **main**-branchen og pakk ut til en fast, skrivbar mappe. Ikke kopier bare CMD-filene.
 
-1. Kjør **INSTALL_DRAGEN.cmd** én gang.
-2. Kjør **START_DRAGEN.cmd** for å åpne appen.
+1. Kjør **INSTALL_DRAGEN.cmd**.
+2. Lukk Python FELLES når installasjonen er ferdig.
+3. Kjør **START_DRAGEN.cmd**.
 
-Det finnes bare disse to CMD-filene. Python og avhengigheter kontrolleres under installasjon og oppstart.
+På jobb-PC åpner CMD-filene Python FELLES gjennom Ivanti, som i PRONTO. Kommandoen
+kopieres til utklippstavlen. Lim inn med **Ctrl+V** i FELLES og trykk **Enter**.
+Bruk et nytt FELLES-vindu etter installasjon. Ingen release eller `wheelhouse` kreves:
+installasjonen henter de låste Python-pakkene når de ikke følger kildekoden.
+Dette krever nettverkstilgang til Python-pakkeregisteret.
 
-## Jobb-PC / Python FELLES
+## Samme startmønster som PRONTO
 
-Som i MolStat åpner filene Python FELLES via Ivanti (`pwrgate.exe`, program-ID 15694)
-og kopierer riktig kommando til utklippstavlen. Lim inn med **Ctrl+V** i Python FELLES
-og trykk **Enter**. Etter installasjon lukkes Python FELLES. Start appen med
-**START_DRAGEN.cmd** og lim inn kommandoen i det nye vinduet.
+De to CMD-filene inneholder hele valget av interpreter. De bruker `install.py` og
+`start.py` direkte; ingen ekstra CMD-hjelpefiler må kjedes sammen.
 
-`install.py` og `start.py` kjører i samme Python-interpreter som FELLES. Installasjonen
-bruker offline-hjulene i `wheelhouse` og appens egen `.felles-packages`. Globale Python-pakker
-endres ikke. Python 3.12–3.14, Windows 64 bit støttes; MolStat-oppsettet bruker FELLES 3.14.
-Et nytt FELLES-vindu uten innlastet Qt kreves.
+- Ivanti: `C:\Program Files (x86)\Ivanti\Workspace Control\pwrgate.exe`, program-ID **15694**.
+- Uten Ivanti: eksplisitt `DRAGEN_PYTHON`, lokal `.venv`, Python Launcher 3.14, deretter `python.exe` på PATH.
+- `DRAGEN_IVANTI` kan angi en annen Ivanti-bane. Tidligere `ABL1_IVANTI` og `ABL1_PYTHON` støttes fortsatt.
+- En utklippstavlefeil stopper ikke Ivanti; en kommando som kan kopieres manuelt vises.
 
-Feil vises i konsollen med bane til loggen i `work/launcher-logs/felles.log`.
-Hvis mappen ikke er skrivbar brukes en lokal midlertidig loggmappe. Ingen separat kontrollfil kreves.
-
-IT kan overstyre Ivanti-banen med `ABL1_IVANTI` og program-ID med `ABL1_IVANTI_APP_ID`.
-Appen endrer ikke Windows-policyer eller PowerShell ExecutionPolicy.
-
-## Lokal utvikler-PC
-
-FELLES er standard. Hvis Ivanti mangler, vises en feil i stedet for å starte en annen Python.
-Starteren leter i både Ivanti- og eldre RES-installasjoner under Program Files og på PATH.
-En eksplisitt `ABL1_IVANTI`-bane må peke på en eksisterende `pwrgate.exe`.
-
-For å velge lokal Python brukes:
+For å velge lokal Python selv på en PC med Ivanti:
 
 ```cmd
 set DRAGEN_LOCAL_PYTHON=1
-INSTALL_DRAGEN.cmd --python "C:\Python314\python.exe" --offline
-START_DRAGEN.cmd --data-dir "D:\LokaleAnalyser\DRAGEN"
+set DRAGEN_PYTHON=C:\Python314\python.exe
+INSTALL_DRAGEN.cmd
+START_DRAGEN.cmd
 ```
 
-Lokale oppstartsfeil skrives til `work/launcher-logs/bootstrap.log`. Flytt hele
-programmappen før installasjon; ikke flytt et ferdig `.venv` mellom PC-er.
+Tilleggsargumenter gjelder ved lokal start, for eksempel `START_DRAGEN.cmd --data-dir D:\DRAGEN-data`.
+En innlimt FELLES-kommando videresender ikke Python-vertens egne argumenter.
 
-## Andre Python-apper, inkludert HemaFrag
+## Pakker og reparasjon
 
-DRAGEN installerer ikke NumPy eller pandas. FELLES-installasjonen bruker bare de ni
-låste pakkene i egen `.felles-packages`, med `--no-deps --ignore-installed` slik at
-delte HemaFrag-pakker ikke inngår i resolveren eller endres. Ved oppstart fjernes
-delte bruker-/site-packages fra DRAGENs importsti; pakkene må komme fra DRAGEN-mappen.
-Hvis en av appens pakker allerede er lastet i FELLES-konsollen, stoppes oppstart med
-beskjed om et nytt vindu. Et allerede innlastet Qt/Pillow byttes aldri ut i prosessen.
+Python 3.12–3.14, Windows 64 bit støttes. PRONTO/FELLES-flyten bruker Python 3.14.
+Installasjonen kjører pip i samme interpreter, uten en underordnet `python.exe`.
+Pakkene legges i appens egen `.felles-packages`, ikke i FELLES-brukerens delte pakker.
+NumPy og pandas installeres ikke av DRAGEN. Dette bevarer isolasjonen fra HemaFrag.
 
-HemaFrag-repoets krav ved kontrollen var NumPy `>=2.1,<3.0` og pandas `>=2.2,<3.0`.
-En eksisterende feil i jobb-PC-ens delte HemaFrag-miljø krever feillogg og retting der;
-DRAGEN nedgraderer ikke det miljøet automatisk.
+Hvis `wheelhouse` følger mappen, brukes den automatisk uten nett. Lokal installasjon kan
+styres med `INSTALL_DRAGEN.cmd --offline` eller `--online`. Vanlig oppstart installerer ingenting.
+En ufullstendig eller eldre pakkemappe erstattes først etter at nye pakker er installert
+og kontrollert. Den gamle mappen beholdes under `.felles-packages` med suffikset `.previous-...`.
 
-## Fra kildekoden
+Feil vises i konsollen med loggbane. FELLES-loggen ligger normalt i
+`work/launcher-logs/felles.log`; hvis mappen ikke er skrivbar brukes en lokal reservemappe.
+Ved feilsøking oppgis feilmeldingen og Python-versjonen fra FELLES, samt om Ivanti-vinduet åpnet.
 
-Git-repoet inneholder ikke binære avhengigheter. Offline-utgaven ligger under GitHub Releases.
-På utvikler-PC uten Ivanti kan `INSTALL_DRAGEN.cmd --online` laste ned låste avhengigheter.
+## Innlogging og data
 
-## Edge og innlogging
-
-E-post og passord kan lagres under **Innstillinger**, i Windows Credential Manager.
-Status er separat per database. MFA og ukjente SSO-skjemaer fullføres i Edge.
-Appen bruker egne nettleserprofiler og respekterer Edge-policy. En egen profil hindrer
-ikke nødvendigvis automatisk Microsoft-innlogging eller synk; kontroller riktig jobbkonto.
-Nettleserprofiler skal ikke deles eller legges i Git.
+E-post og passord lagres i Windows Credential Manager. Eksisterende appdata og profiler
+har samme lagringssted. Innlogging og eventuelle MFA-steg fullføres i databasevinduet.
+Endringene her endrer ikke en annen apps installasjon eller Windows-policyer.

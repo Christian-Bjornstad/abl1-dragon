@@ -1,6 +1,6 @@
 # Første test på jobb-PC
 
-Pakk ut hele offline-pakken til en fast, skrivbar mappe. Ikke start direkte i ZIP.
+Last ned hele main-branchen fra GitHub og pakk ut til en fast, skrivbar mappe. Ikke start direkte i ZIP.
 Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 
 ## Python FELLES
@@ -8,7 +8,7 @@ Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 1. Kjør **INSTALL_DRAGEN.cmd**. Python FELLES åpnes via Ivanti; lim inn med Ctrl+V og trykk Enter.
 2. Lukk FELLES etter installasjon. Kjør **START_DRAGEN.cmd** og lim inn i det nye FELLES-vinduet.
 
-FELLES er standard. Manglende Ivanti vises som en feil; lokal Python krever eksplisitt `DRAGEN_LOCAL_PYTHON=1`. Det er ingen egen kontrollfil. Feil og loggbane vises ved installasjon eller start.
+Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal Python, `.venv` eller Python Launcher. Det er ingen egen kontrollfil. GitHub-kildekoden trenger ikke wheelhouse; installasjonen henter låste pakker ved behov. Feil og loggbane vises ved installasjon eller start.
 
 ## Kontroller i appen
 

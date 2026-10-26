@@ -211,39 +211,49 @@ def activate(root=ROOT):
     return project
 
 
-def install(root=ROOT):
+def install(root=ROOT,*,offline=None,pip_main=None):
     root=Path(root).resolve();project,required=requirements(root)
     if _loaded_app_modules():
         raise RuntimeError('Lukk tidligere apper og bruk et nytt Python FELLES-vindu før installasjon.')
     wheels=root/'wheelhouse'
-    if not wheels.is_dir():raise RuntimeError('FELLES-installasjon krever medfølgende wheelhouse. Pakk ut hele offline-pakken.')
+    use_offline=wheels.is_dir() if offline is None else offline
+    if use_offline and not wheels.is_dir():raise RuntimeError('Offline-installasjon krever wheelhouse. Kjør install.py uten --offline for GitHub-kildekode.')
     target=package_dir(root)
-    # First install only. Never overwrite a package already loaded by this host.
+    private_root=root/'.felles-packages'
+    if private_root.resolve()!=private_root or target.resolve()!=target:
+        raise RuntimeError('DRAGENs pakkemappe peker utenfor programmappen.')
+    # Build a complete replacement before moving any existing app-owned packages.
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
         if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
             print('Lokale FELLES-pakker finnes. Bruk START_DRAGEN.cmd i et nytt vindu.');return 0
-        raise RuntimeError('Ufullstendig/eldre FELLES-pakkemappe: '+str(target)+'. Bevar eller flytt denne før nytt forsøk.')
-    temporary=target.with_name(target.name+'.installing')
-    temporary.mkdir(parents=True,exist_ok=False)
-    args=['install','--isolated','--no-index','--no-deps','--ignore-installed','--find-links',str(wheels),'--only-binary=:all:',
+        print('Reparerer DRAGENs lokale pakker; eksisterende mappe bevares som sikkerhetskopi.')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    temporary=Path(tempfile.mkdtemp(prefix=target.name+'.installing-',dir=target.parent))
+    args=['install','--isolated','--no-deps','--ignore-installed','--only-binary=:all:',
           '--no-user','--no-input','--disable-pip-version-check','--target',str(temporary),'-r',str(root/'requirements-desktop.txt')]
-    print('Installerer offline i appens egen FELLES-pakkemappe. Globale pakker endres ikke.')
+    if use_offline:args+=['--no-index','--find-links',str(wheels)]
+    print(('Installerer fra wheelhouse' if use_offline else 'Installerer fra Python-pakkeregisteret')+' i DRAGENs egen pakkemappe. Globale pakker endres ikke.')
     try:
         # Python FELLES may prohibit a child python.exe. Run pip once in this
         # interpreter, then require a fresh FELLES window before app startup.
-        original_argv=sys.argv[:]
-        sys.argv=['pip',*args]
-        try:
-            runpy.run_module('pip',run_name='__main__',alter_sys=True)
-            code=0
-        except SystemExit as result:code=result.code or 0
-        finally:sys.argv=original_argv
-        if code:raise RuntimeError('Offline pip feilet. Delvis installasjon beholdes i '+str(temporary))
+        if pip_main is None:
+            try:from pip._internal.cli.main import main as pip_main
+            except ImportError:
+                raise RuntimeError('pip mangler i aktiv Python. Bruk samme Python FELLES som PRONTO.') from None
+        code=pip_main(args) or 0
+        if code:raise RuntimeError('Pakkeinstallasjonen feilet. Delvis installasjon beholdes i '+str(temporary))
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(temporary)])}
         if not all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
             raise RuntimeError('Versjonskontroll feilet. Delvis mappe beholdes: '+str(temporary))
-        temporary.rename(target)
+        backup=None
+        if target.exists():
+            backup=target.with_name(target.name+'.previous-'+datetime.now().strftime('%Y%m%d%H%M%S%f'))
+            target.rename(backup)
+        try:temporary.rename(target)
+        except OSError:
+            if backup is not None and not target.exists():backup.rename(target)
+            raise
     except Exception:
         print('Installasjon ble stoppet. Kontroller eventuell .installing-mappe før nytt forsøk.');raise
     print('Installasjonen er kontrollert. Lukk dette FELLES-vinduet og bruk START_DRAGEN.cmd.')
@@ -267,7 +277,14 @@ def entry(action,root=ROOT,argv=None):
         if action=='check':
             report=check(root)
             return 0 if report['ready_for_install'] or report['ready_for_start'] else 1
-        if action=='install':return install(root)
+        if action=='install':
+            import argparse
+            parser=argparse.ArgumentParser(description='Installer DRAGEN')
+            mode=parser.add_mutually_exclusive_group()
+            mode.add_argument('--offline',dest='offline',action='store_true')
+            mode.add_argument('--online',dest='offline',action='store_false')
+            parser.set_defaults(offline=None)
+            return install(root,offline=parser.parse_args(list(argv or [])).offline)
         if action=='start':return start(root,argv=argv)
         raise ValueError('Ukjent FELLES-handling: '+str(action))
     except Exception as error:

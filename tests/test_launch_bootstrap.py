@@ -111,6 +111,8 @@ class LauncherTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows CMD entrypoints")
     def test_actual_cmd_routes_handle_special_paths_and_failure_exit_code(self):
         (self.project / "wheelhouse").mkdir()
+        (self.project/'install.py').write_text("import sys\nfrom pathlib import Path\nPath(__file__).with_name('cmd-install-args.json').write_text(__import__('json').dumps(sys.argv[1:]))\n",encoding='utf-8')
+        (self.project/'start.py').write_text("import json,sys\nfrom pathlib import Path\nPath(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\nraise SystemExit(7)\n",encoding='utf-8')
         def invoke(name, args=""):
             command = f'cmd.exe /d /s /c ""{self.project / name}" {args}"'
             return subprocess.run(command, cwd=self.tmp.name, env=self.env,
@@ -118,9 +120,7 @@ class LauncherTests(unittest.TestCase):
                                   errors="replace", timeout=90)
         installed = invoke("INSTALL_DRAGEN.cmd", "--offline")
         self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
-        checked = self.run_bootstrap('check')
-        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
-        self.assertTrue(json.loads(checked.stdout)["ready"])
+        self.assertEqual(json.loads((self.project/'cmd-install-args.json').read_text()),['--offline'])
         started = invoke("START_DRAGEN.cmd", '--data-dir "a CMD review & data"')
         self.assertEqual(started.returncode, 7, started.stdout + started.stderr)
         self.assertEqual(json.loads((self.project / "arguments.json").read_text()),
