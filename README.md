@@ -26,6 +26,8 @@ Krever Python 3.12–3.14, 64 bit.
 Start og installasjon følger PRONTOs Python FELLES-mønster. På jobb-PC åpnes FELLES via
 Ivanti; lim inn med Ctrl+V og trykk Enter. Ved installasjon fra kildekoden hentes de låste
 pakkene automatisk. Lukk FELLES etter installasjon før appen startes i et nytt vindu.
+Hver Windows-bruker får egne pakker i `%LOCALAPPDATA%\DRAGEN\python-packages`.
+Kildekoden kan deles fra fellesområdet; installasjonen flytter ikke delte pakkemapper.
 
 [Installasjon, Python FELLES og Edge](docs/INSTALL.md).
 [Første test på jobb-PC](docs/JOBBPC_TEST.md).
@@ -54,12 +56,16 @@ E-post og passord lagres i Windows Credential Manager per lokal appdatamappe. Pa
 ligger ikke i innstillingsfilen og fylles bare inn i kontrollerte innloggingsskjemaer
 på riktig databasevert. MFA og endrede/eksterne SSO-skjemaer fullføres i Edge.
 **Glem** fjerner den lagrede innloggingen; aktive nettstedssesjoner kan fortsatt være innlogget.
+Opplysninger skrevet før **Åpne / logg inn** lagres automatisk. Appen venter på
+bekreftet innlogging etter innsending. En lagret OncoKB-konto brukes før variantsøket.
 Prøvenavn, VCF og alignments sendes ikke til databasene.
 
-**Eksporter Excel** lager ett ark per merket prøve/variant, navngitt etter proteinvarianten,
-uten oversiktsark. AF, ALT/DP, FILTER, kildeinformasjon og tilgjengelige kildebilder følger med.
+**Eksporter Excel** lager én fil per prøve: `<prøvenavn>_DRAGEN_Resultater.xlsx`.
+Ved flere prøver velges en målmappe. Hver fil har ett ark per merket variant,
+navngitt etter proteinvarianten, uten oversiktsark.
+AF, ALT/DP, FILTER, kildeinformasjon og tilgjengelige kildebilder følger med.
 Et standardbilde av riktig prøves IGV tas automatisk for hver variant under eksporten.
-Ulike prøver med samme proteinvariant får egne ark. Manglende bilde/tilgang angis i arket.
+Ulike prøver får hver sin fil. Manglende bilde/tilgang angis i variantarket.
 Databasebilder tas bare når nettsiden bekrefter riktig allel; et treff i tekst alene er
 ikke tilstrekkelig. Kildestatus viser om bildet er klart. Etter innlogging eller
 nettleserkontroll: velg varianten og trykk **Hent bilder fra åpne sider**.

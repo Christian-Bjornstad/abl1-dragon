@@ -35,7 +35,7 @@ def main(argv=None):
     app.setOrganizationName('ABL1Dragon');app.setApplicationName('ABL1Dragon');app.setApplicationVersion(__version__)
     app.setApplicationDisplayName(APP_NAME)
     from .domain import ReviewStore, load_inputs, load_pilot, resource_root, save_project
-    from .report import export_report
+    from .report import export_sample_reports
     icon=resource_root()/'assets/brand/abl1-dragon.ico'
     if icon.is_file():app.setWindowIcon(QIcon(str(icon)))
     from .ui import MainWindow
@@ -64,13 +64,16 @@ def main(argv=None):
         project_file=diagnostic_dir/'analyse.abl1.json';save_project(window.session,store,project_file)
         restored=load_inputs([project_file],'GRCh37')
         proof['project_roundtrip']=restored.run_id==window.session.run_id
-        workbook_file=diagnostic_dir/'analyse.xlsx';export_report(window.session,window.session.data['variants'],{},workbook_file)
+        workbook_files=export_sample_reports(window.session,window.session.data['variants'],{},diagnostic_dir/'rapporter')
         from openpyxl import load_workbook
-        workbook=load_workbook(workbook_file,read_only=True)
-        proof['excel_variant_rows']=len(workbook.worksheets)
-        proof['excel_variant_sheets']=workbook.sheetnames
-        proof['excel_no_overview']='Resultater' not in workbook.sheetnames and len(workbook.worksheets)==3
-        workbook.close()
+        sheets=[]
+        for workbook_file in workbook_files:
+            workbook=load_workbook(workbook_file,read_only=True);sheets.extend(workbook.sheetnames);workbook.close()
+        proof['excel_variant_rows']=len(sheets)
+        proof['excel_variant_sheets']=sheets
+        proof['excel_sample_reports']=[path.name for path in workbook_files]
+        proof['excel_no_overview']='Resultater' not in sheets and len(sheets)==3
+        proof['excel_one_file_per_sample']=len(workbook_files)==len(window.session.data['samples'])
         import gzip
         vcf=diagnostic_dir/'NySample.vcf.gz'
         text='##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNySample\nchr9\t133748283\t.\tC\tT\t.\tPASS\t.\tGT:AF:AD:DP\t0/1:0.25:75,25:100\n'
@@ -81,7 +84,7 @@ def main(argv=None):
             if not window.grab().save(str(args.screenshot)):raise RuntimeError('Skjermbilde kunne ikke lagres')
         args.smoke_test.parent.mkdir(parents=True,exist_ok=True);args.smoke_test.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         window.close();app.processEvents()
-        return 0 if native_check and proof['synthetic_demo'] and proof['project_roundtrip'] and proof['vcf_gzip_import'] and proof['excel_no_overview'] and proof['excel_variant_rows']==3 and proof['qc_rows']==0 and proof['phase_rows']==0 else 2
+        return 0 if native_check and proof['synthetic_demo'] and proof['project_roundtrip'] and proof['vcf_gzip_import'] and proof['excel_no_overview'] and proof['excel_one_file_per_sample'] and proof['excel_variant_rows']==3 and proof['qc_rows']==0 and proof['phase_rows']==0 else 2
     return app.exec()
 
 

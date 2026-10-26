@@ -8,6 +8,10 @@ Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 1. Kjør **INSTALL_DRAGEN.cmd**. Python FELLES åpnes via Ivanti; lim inn med Ctrl+V og trykk Enter.
 2. Lukk FELLES etter installasjon. Kjør **START_DRAGEN.cmd** og lim inn i det nye FELLES-vinduet.
 
+Hver bruker installerer sine egne pakker under `%LOCALAPPDATA%\DRAGEN\python-packages`.
+Gamle `.felles-packages` på fellesområdet brukes ikke. Kollegaer kan bruke samme
+kildekodemappe uten at installasjonen flytter pakkemappene til andre brukere.
+
 Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal Python, `.venv` eller Python Launcher. Det er ingen egen kontrollfil. GitHub-kildekoden trenger ikke wheelhouse; installasjonen henter låste pakker ved behov. Feil og loggbane vises ved installasjon eller start.
 
 ## Kontroller i appen
@@ -16,7 +20,7 @@ Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal
 - Bytt mellom **PASS + kandidater**, **PASS**, **Kandidater** og **Alle**.
 - Kontroller at **Innstillinger** har valgt medfølgende `reference/hg19/chr9.fa` automatisk. Kontroller IGV for en prøve med indeks, også uten nettilgang.
 - Velg en variant og bruk **Søk i databaser**. Kontroller at treff og manglende tilgang skilles.
-- Merk to varianter og eksporter Excel. Arbeidsboken skal ha ett ark per merket prøve/variant, med proteinvariant som navn og uten oversiktsark. Kontroller riktig prøve, AF/DP og IGV-bilde i hvert ark. Manglende bilder eller tilgang skal angis.
+- Merk varianter fra to prøver og eksporter Excel til en mappe. Det skal lages én fil per prøve med navnet `<prøvenavn>_DRAGEN_Resultater.xlsx`. Hver fil skal bare inneholde den prøvens merkede varianter, med proteinnavn på arkene og uten oversiktsark. Kontroller prøve, AF/DP og IGV-bilde.
 - Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
 - OncoKB: kontomenyen i nettstedets toppfelt bekrefter innlogging selv om utloggingsmenyen er lukket. Et verifisert variantbilde kan lagres selv om klassifikasjonsetiketten ikke kan leses automatisk; dette angis i rapporten.
 - Lukk appens databasevindu og åpne det på nytt fra **Innstillinger**. Andre databaseøkter skal beholde sin innloggingsstatus.

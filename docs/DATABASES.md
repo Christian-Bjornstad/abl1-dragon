@@ -17,7 +17,8 @@ MTBP-analysen kan bruke tid. **Analyse venter** betyr at neste søk skal hente s
 analyse. Rapporten oppgir om MTBP-treffet bygger på protein eller cDNA. Private
 MTBP-rapportadresser eksporteres ikke. Rapporter slettes ikke fra MTBP av appen.
 
-Excel har ett ark per valgt prøve/variant med proteinvariant som arknavn. Hvert
+Excel lagres i én fil per prøve, `<prøvenavn>_DRAGEN_Resultater.xlsx`, med
+ett ark per valgt variant og proteinvariant som arknavn. Hvert
 ark inneholder variantdata, kildesvar, navngitte databasebilder og prøvens IGV-bilde.
 Det opprettes ikke oversiktsark. Manglende delbilder vises både i appen og i Excel.
 
@@ -32,6 +33,9 @@ Det opprettes ikke oversiktsark. Manglende delbilder vises både i appen og i Ex
   bilde fra den faktiske gnomAD-siden i Edge.
 - Kontrollerte tester dekker blant annet variantbytte under bildeuttak, tomme
   bilder, delvise uttrekk, gjenoppretting, MTBP-kø og avbrutt innsending.
+- Innloggingsskjemaene er kontrollert i Edge med syntetiske skjemaer og blokkert
+  nettverk. Franklin/OncoKBs JavaScript-skjemaer får ikke sende passord via GET;
+  appen venter på en bekreftet økt etter én innsending.
 
 Full gjennomgang av innloggede Franklin-, COSMIC- og MTBP-sider må gjøres med
 aktuelle kontoer og tilganger. Se [jobb-PC-testen](JOBBPC_TEST.md).
