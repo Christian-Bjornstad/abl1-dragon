@@ -20,6 +20,10 @@ def dismiss_cookies(context,provider):
     # Only reject optional cookies inside known cookie containers. Never hide
     # arbitrary dialogs or accept terms on behalf of the user.
     clicked=evaluate(context,provider,"""
+      const ids={franklin:'#CybotCookiebotDialogBodyButtonDecline',cosmic:'#cookie-reject',oncokb:'#onetrust-reject-all-handler'};
+      const specific=ids["""+json.dumps(provider)+"""];
+      if(specific){const buttons=[...document.querySelectorAll(specific)].filter(visible);
+        if(buttons.length===1&&/^(Deny|Reject all|Accept essential)$/i.test(buttons[0].innerText.trim())&&!buttons[0].disabled){buttons[0].click();return true;}}
       const selectors='#onetrust-banner-sdk,#onetrust-consent-sdk,[class*=cookie-consent],[class*=consent-banner]';
       for(const box of document.querySelectorAll(selectors)){
         if(!visible(box))continue;
@@ -29,7 +33,7 @@ def dismiss_cookies(context,provider):
       }return false;""")
     if clicked:time.sleep(.35)
     blocked=evaluate(context,provider,"""
-      return [...document.querySelectorAll('#onetrust-banner-sdk,[class*=cookie-consent],[class*=consent-banner]')]
+      return [...document.querySelectorAll('#onetrust-banner-sdk,#CybotCookiebotDialog,[class*=cookie-consent],[class*=consent-banner]')]
         .some(e=>visible(e)&&/cookie|privacy/i.test(e.innerText)&&[...e.querySelectorAll('button')].some(visible));""")
     if blocked:raise RuntimeError('Et cookie-vindu dekker resultatet. Lukk det i Edge og hent bildene igjen.')
 

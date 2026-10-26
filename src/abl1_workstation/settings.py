@@ -106,7 +106,8 @@ class SettingsPanel(QWidget):
             self.credentials.save(provider,email,password)
             self.passwords[provider].clear();self.passwords[provider].setPlaceholderText('Lagret passord')
             self.message.setText(PROVIDER_NAMES[provider]+': innlogging lagret.')
-        except (CredentialStoreError,ValueError) as error:self.message.setText(str(error))
+            return True
+        except (CredentialStoreError,ValueError) as error:self.message.setText(str(error));return False
 
     def forget_login(self,provider):
         try:
@@ -129,6 +130,11 @@ class SettingsPanel(QWidget):
 
     def open_source(self,provider):
         if self.busy:return
+        if provider in PORTALS:
+            try:previous,_=self.credentials.get(provider)
+            except CredentialStoreError:previous=''
+            changed=self.emails[provider].text().strip()!=previous
+            if (self.passwords[provider].text() or changed) and not self.save_login(provider):return
         self.enabled[provider].setChecked(True)
         self.status_labels[provider].setText('Åpner …')
         def operation():

@@ -525,6 +525,8 @@ class _EdgeContext:
           const reactLogin="""+json.dumps(provider=='oncokb')+"""&&new URL(origin).pathname.replace(/\\/$/,'')==='/login';
           const form=p.form||(reactLogin?p.closest('[role=form],.login-form,.login-container,.form-container'):null);
           if(!form)return false;
+          const angularLogin="""+json.dumps(provider=='franklin')+"""&&new URL(origin).pathname.replace(/\\/$/,'')==='/login'&&form.matches('form.sign-in-form')&&p.id==='password'&&form.querySelectorAll('#email[type=email]').length===1;
+          const javascriptLogin=reactLogin||angularLogin;
           const users=[...form.querySelectorAll('input[type=email],input[name=username],input[name=email],#email,#username,input[autocomplete=username],input[placeholder="Registered email address"],input[placeholder="Your institutional email address"]')].filter(visible);
           const unique=[...new Set(users)];if(unique.length!==1)return false;
           const target=new URL(form.action||location.href,location.href);
@@ -535,19 +537,23 @@ class _EdgeContext:
           if(buttons.length!==1)return false;const submit=buttons[0];
           const action=new URL(submit.formAction||form.action||location.href,location.href);
           if(!safe(action))return false;
+          // Franklin/OncoKB use JavaScript forms labelled GET. Prevent a native
+          // fallback before touching fields, and allow only the known form.
+          if(p.form&&String(form.method).toLowerCase()!=='post'){
+            if(!javascriptLogin)return false;
+            form.addEventListener('submit',event=>event.preventDefault(),{once:true});
+          }
           const set=(e,v)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,v);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));};
           set(unique[0],"""+json.dumps(email)+""");set(p,"""+json.dumps(password)+""");
           // React controlled inputs may enable the button in the next task.
           await new Promise(resolve=>setTimeout(resolve,0));
           if(location.href!==origin||!safe(new URL(submit.formAction||form.action||location.href,location.href))||submit.disabled||!visible(submit))return false;
-          if(p.form&&String(form.method).toLowerCase()!=='post'){
-            if(!reactLogin)return false;
-            // OncoKB submits through React. Prevent a native GET fallback
-            // from putting credentials in the address bar if JS changes.
-            form.addEventListener('submit',event=>event.preventDefault(),{once:true});
-          }
           submit.click();return true;
         })()""")
+
+    def dismiss_login_cookies(self,provider):
+        from .browser_evidence import dismiss_cookies
+        dismiss_cookies(self,provider)
 
     def is_alive(self,*,refresh_session=False):
         """True/False require a completed target probe; None is inconclusive."""
@@ -627,11 +633,24 @@ class PortalBrowser:
         try:email,password=self.credentials.get(provider)
         except CredentialStoreError:return False
         if not email or not password:return False
-        for attempt in range(12):
-            if context.fill_login(provider,email,password):return True
+        submitted=False
+        for attempt in range(45):
             if self.status(provider).get('status')=='logged_in':return True
+            if not submitted:
+                try:
+                    if hasattr(type(context),'dismiss_login_cookies'):context.dismiss_login_cookies(provider)
+                except (OSError,ValueError,RuntimeError,TimeoutError):
+                    time.sleep(.4);continue
+                try:submitted=bool(context.fill_login(provider,email,password))
+                except (OSError,ValueError,RuntimeError,TimeoutError):return False
             time.sleep(.4)
         return False
+
+    def _has_saved_account(self,provider):
+        from .credentials import CredentialStoreError
+        try:email,password=self.credentials.get(provider)
+        except CredentialStoreError:return False
+        return bool(email and password)
     def diagnostics(self):
         result=dict(self.edge.diagnostics());result['profile_dir']=str(self.profile_dir)
         result['authenticated']=None;result['controlled_portal_profiles']=list(self._contexts)
@@ -864,6 +883,12 @@ class PortalBrowser:
         settings=settings or {}
         with self._locks[provider]:
             context=self._context(provider)
+            # OncoKB also serves anonymous result pages. A valid public page
+            # must not silently replace an explicitly saved account workflow.
+            if provider=='oncokb' and self._has_saved_account(provider) and self.status(provider).get('status')!='logged_in':
+                context.navigate(LOGIN_URLS[provider])
+                if not self._saved_login(provider,context):
+                    return {'status':'login_required','identity':canonical_identity(variant),'summary':'OncoKB-innloggingen kunne ikke bekreftes. Kontroller lagret konto eller fullfør innlogging i Edge.'}
             if provider=='franklin':
                 url='https://franklin.genoox.com/clinical-db/home'
             elif provider=='oncokb':url='https://www.oncokb.org/hgvsg/'+quote(genomic_hgvs(variant),safe=':>')+'?refGenome=GRCh37'

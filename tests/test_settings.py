@@ -37,6 +37,22 @@ class SettingsTests(unittest.TestCase):
 
 
 class SettingsPanelTests(unittest.TestCase):
+    def test_open_saves_typed_account_before_browser_login_without_extra_save_click(self):
+        from abl1_workstation.credentials import CredentialStore
+        from test_credentials import MemoryVault
+        class Browser:
+            def set_credentials(self,store):self.store=store
+            def open_login(self,p):self.account=self.store.get(p)
+            def status(self,p):return {'status':'logged_out','summary':'Ikke innlogget'}
+        with tempfile.TemporaryDirectory() as folder:
+            vault=CredentialStore(folder,backend=MemoryVault());browser=Browser()
+            panel=SettingsPanel(Settings(folder),browser,credential_store=vault)
+            panel.emails['franklin'].setText('synthetic@example.invalid');panel.passwords['franklin'].setText('SYNTHETIC_ONLY')
+            panel.open_source('franklin')
+            deadline=time.monotonic()+3
+            while panel.busy and time.monotonic()<deadline:self.app.processEvents();time.sleep(.005)
+            self.assertFalse(panel.busy);self.assertEqual(browser.account,('synthetic@example.invalid','SYNTHETIC_ONLY'))
+            self.assertEqual(panel.passwords['franklin'].text(),'');panel.close()
     def test_saved_account_is_restored_masked_and_can_be_forgotten_without_json_secrets(self):
         from abl1_workstation.credentials import CredentialStore
         from test_credentials import MemoryVault
