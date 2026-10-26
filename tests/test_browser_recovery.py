@@ -159,6 +159,16 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(Path(result['screenshot']).is_file())
         self.assertEqual(page.navigations, [])
 
+    def test_oncokb_badge_layout_still_captures_exact_result_without_guessing_class(self):
+        url='https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37'
+        ready={'url':url,'text':'GRCh37\n9:g.133748283C>T\nABL1 T315I\nOncogenic\nClinical Implications for this Biomarker',
+               'oncokb_result_visible':True,'oncokb_account_visible':True}
+        page=Page([ready,ready,ready]);self.browser._contexts['oncokb']=page
+        result=self.browser.recapture_result('oncokb',V,{'status':'login_required','identity':dict(V),'url':url})
+        self.assertEqual(result['status'],'found');self.assertEqual(result['classification'],'')
+        self.assertTrue(Path(result['screenshot']).is_file());self.assertTrue(result['identity_verified'])
+        self.assertEqual(page.navigations,[])
+
     def test_passive_recaptcha_footer_allows_public_capture_but_active_challenge_does_not(self):
         for challenge in (False, True):
             page = Page([{**PAGE, 'text': PAGE['text'] + '\nProtected by reCAPTCHA', 'challenge_visible': challenge}])

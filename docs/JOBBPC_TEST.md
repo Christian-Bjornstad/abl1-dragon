@@ -18,6 +18,7 @@ Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal
 - Velg en variant og bruk **Søk i databaser**. Kontroller at treff og manglende tilgang skilles.
 - Merk to varianter og eksporter Excel. Arbeidsboken skal ha ett ark per merket prøve/variant, med proteinvariant som navn og uten oversiktsark. Kontroller riktig prøve, AF/DP og IGV-bilde i hvert ark. Manglende bilder eller tilgang skal angis.
 - Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
+- OncoKB: kontomenyen i nettstedets toppfelt bekrefter innlogging selv om utloggingsmenyen er lukket. Et verifisert variantbilde kan lagres selv om klassifikasjonsetiketten ikke kan leses automatisk; dette angis i rapporten.
 - Lukk appens databasevindu og åpne det på nytt fra **Innstillinger**. Andre databaseøkter skal beholde sin innloggingsstatus.
 - Etter innlogging eller manuell nettleserkontroll: vis riktig variant i databasevinduet og bruk **Hent bilder fra åpne sider**. Kontroller at kildestatus viser **bilde klart**, og at bildet følger med i Excel.
 - Kontroller jobbkonto og Microsoft-synk. Edge kan automatisk koble en Windows-konto

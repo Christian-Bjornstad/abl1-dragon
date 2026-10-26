@@ -13,6 +13,26 @@ V={'assembly':'GRCh37','chrom':'9','pos':133748283,'ref':'C','alt':'T','cdna':'c
 
 
 class PortalParserTests(unittest.TestCase):
+    def test_oncokb_account_menu_confirms_login_with_closed_logout_dropdown(self):
+        page={'url':'https://www.oncokb.org/','oncokb_account_visible':True,'logout_visible':False}
+        self.assertEqual(login_status('oncokb',page)['status'],'logged_in')
+        for change in ({'password_visible':True},{'url':'https://www.oncokb.org/login'},
+                       {'url':'https://evil.invalid/'}):
+            self.assertNotEqual(login_status('oncokb',{**page,**change})['status'],'logged_in')
+        self.assertNotEqual(login_status('franklin',{**page,'url':'https://franklin.genoox.com/clinical-db/home'})['status'],'logged_in')
+
+    def test_oncokb_unlabelled_result_can_supply_picture_without_inventing_classification(self):
+        page={'url':'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37',
+              'text':'GRCh37\n9:g.133748283C>T\nABL1 T315I\nOncogenic\nClinical Implications for this Biomarker',
+              'oncokb_result_visible':True}
+        result=parse_portal_snapshot('oncokb',V,page)
+        self.assertEqual(result['status'],'found');self.assertTrue(result['identity_verified'])
+        self.assertEqual(result['classification'],'')
+        self.assertIn('ikke leses automatisk',result['summary'])
+        for changed in ({'oncokb_result_visible':False},{'text':'GRCh37\n9:g.133748283C>T\nOncogenic'},
+                        {'url':page['url'].replace('C%3ET','C%3EG')},{'password_visible':True}):
+            self.assertNotEqual(parse_portal_snapshot('oncokb',V,{**page,**changed})['status'],'found')
+
     def test_login_state_requires_visible_authenticated_controls(self):
         base={'url':'https://franklin.genoox.com/clinical-db/home','text':'Franklin','password_visible':False}
         self.assertEqual(login_status('franklin',base)['status'],'unknown')

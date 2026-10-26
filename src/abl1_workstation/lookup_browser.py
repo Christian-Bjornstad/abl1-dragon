@@ -65,6 +65,8 @@ def login_status(provider,snapshot):
         return {**result,'status':'logged_out','summary':'Ikke innlogget'}
     if snapshot.get('logout_visible'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
+    if provider=='oncokb' and snapshot.get('oncokb_account_visible') is True:
+        return {**result,'status':'logged_in','summary':'Innlogget'}
     if provider=='franklin' and parts.path.startswith('/clinical-db/') and snapshot.get('franklin_search'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
     if provider=='mtbp' and parts.path.rstrip('/')=='/analyse' and snapshot.get('mtbp_form'):
@@ -185,12 +187,17 @@ def parse_portal_snapshot(provider,variant,snapshot):
         return {**result,'status':'not_found','summary':'Portalen rapporterte ingen variant for det identitetskontrollerte søket. Dette betyr ikke benign.'}
     if not ready:return result
     classifications=_labelled_classifications(provider,text)
-    if provider!='cosmic' and not classifications:return result
+    readable_page=(provider=='oncokb' and snapshot.get('oncokb_result_visible') is True
+                   and 'Clinical Implications for this Biomarker' in text)
+    if provider!='cosmic' and not classifications and not readable_page:return result
     levels=_labelled_levels(text)
     excerpt=[label+': '+value for label,value in classifications+levels]
     classification='; '.join(label+': '+value for label,value in classifications) if provider=='franklin' else '; '.join(value for _,value in classifications)
+    summary=(' | '.join(excerpt[:8]) if excerpt else 'COSMIC oversikt og kildeinnhold er tilgjengelig.')
+    if readable_page and not classifications:
+        summary='Klassifikasjonen kunne ikke leses automatisk. Se variantens kildebilde og lenke.'
     return {**result,'status':'found','classification':classification,'evidence_level':'; '.join(label+': '+value for label,value in levels),
-            'summary':f'{provider.title()}: identitetskontrollert portalresultat. '+(' | '.join(excerpt[:8]) if excerpt else 'COSMIC oversikt og kildeinnhold er tilgjengelig.'),
+            'summary':f'{provider.title()}: identitetskontrollert portalresultat. '+summary,
             'identity_verified':True,'identity_method':identity_method,
             'accession':genomic_hgvs(variant),'classifications':{label:{'description':value} for label,value in classifications},
             'details':{'portal_excerpt':excerpt[:12],'retrieval':'visible authenticated portal content'}}
@@ -420,8 +427,10 @@ class _EdgeContext:
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
             mtbp_form:Array.from(document.querySelectorAll('#variant-input')).some(visible),
+            oncokb_account_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('header #account-menu')).some(visible),
+            oncokb_result_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('h1')).some(x=>visible(x)&&/\\bABL1\\b/.test(x.innerText||''))&&Array.from(document.querySelectorAll('#clinical-implications')).some(visible),
             logout_visible:controls.some(x=>/^(?:log\\s*out|sign\\s*out|logout)$/i.test(caption(x))),
-            login_visible:controls.some(x=>/^(?:log\\s*in|sign\\s*in|login)$/i.test(caption(x)))};
+            login_visible:controls.some(x=>/^(?:log\\s*in|sign\\s*in|login)(?:\\s*\\/\\s*register)?$/i.test(caption(x)))};
         })()""")
 
     def auth_snapshot(self):return self.snapshot(auth_only=True)
