@@ -428,7 +428,7 @@ class _EdgeContext:
         text_field='' if auth_only else "text:(document.body?document.body.innerText:'').slice(0,120000),"
         result_fields='' if auth_only else """oncokb_fields:(()=>{
           if(location.hostname!=='www.oncokb.org')return {};
-          const roots=[...document.querySelectorAll('[class*=SomaticGermlineTiles-module__alterationTileItems]')].filter(visible);
+          const roots=[...document.querySelectorAll('[class*=SomaticGermlineTiles-module__alterationTileItems]')].filter(e=>visible(e)&&[...e.querySelectorAll('h4')].some(h=>h.innerText.trim()==='Oncogenicity'));
           if(roots.length!==1)return {};
           const result={};for(const label of ['Oncogenicity','Biological Effect']){
             const headings=[...roots[0].querySelectorAll('h4')].filter(e=>visible(e)&&e.innerText.trim()===label);
@@ -794,11 +794,11 @@ class PortalBrowser:
             snapshot=context.snapshot() or {}
             problem=self._capture_problem(provider,variant,snapshot)
             if not problem:
-                if provider not in PUBLIC_HOSTS and result.get('status')!='found':
+                if provider not in PUBLIC_HOSTS:
                     parsed=parse_portal_snapshot(provider,variant,snapshot)
                     if parsed.get('status')=='found' and parsed.get('identity_verified') is True:
                         result={**result,**parsed}
-                    else:return self._capture_error(result,'page_not_ready','Variantresultatet er ikke ferdig. Vent eller kjør oppslaget på nytt.')
+                    elif result.get('status')!='found':return self._capture_error(result,'page_not_ready','Variantresultatet er ikke ferdig. Vent eller kjør oppslaget på nytt.')
                 return self._capture(provider,variant,context,result)
             if problem[0]=='login_required':break
             if provider=='clinvar' and problem[0]=='identity_mismatch' and not expansion_attempted:
@@ -817,6 +817,8 @@ class PortalBrowser:
         An API/text result stays intact. Never launch a browser implicitly or
         move the page the user just prepared; capture only this exact allele.
         """
+        if provider=='mtbp':
+            return result if result.get('screenshot') else self._capture_error(result,'resume_analysis','Bruk «Søk i databaser» for å hente samme MTBP-analyse og bildet.')
         resumable=(provider in {'franklin','oncokb','cosmic'} and result.get('status') in {'login_required','error'})
         if provider not in PORTAL_HOSTS or provider=='mtbp' or (result.get('status')!='found' and not resumable):
             return self._capture_error(result,'capture_unsupported','Ingen identitetskontrollert variant klar for bildeuttak.')
@@ -843,7 +845,9 @@ class PortalBrowser:
         except (TypeError,ValueError):return False
 
     def lookup(self,provider,variant,*,settings=None):
-        if provider=='mtbp':return {'status':'unsupported','summary':'MTBP-oppslag oppretter eksterne analyser. Denne adapteren sender eller sletter ingen slike rapporter.'}
+        if provider=='mtbp':
+            from .mtbp import lookup_mtbp
+            with self._locks[provider]:return lookup_mtbp(self,variant,settings or {})
         if provider not in ('franklin','oncokb','cosmic'):return {'status':'unsupported','summary':'Kilden bruker offentlig API-adapter.'}
         settings=settings or {}
         with self._locks[provider]:

@@ -279,7 +279,7 @@ class MainWindow(QMainWindow):
         merged.update({item['provider']:item for item in results})
         self.lookup_results[key]=list(merged.values());self._render_sources()
         for item in results:
-            state={'found':'treff','not_found':'ingen treff','login_required':'innlogging kreves','license_required':'tilgang kreves','unsupported':'ikke tilgjengelig','error':'feil'}.get(item.get('status'),'ukjent status')
+            state={'found':'treff','not_found':'ingen treff','login_required':'innlogging kreves','license_required':'tilgang kreves','unsupported':'ikke tilgjengelig','error':'feil','pending':'analyse venter – søk igjen for å hente resultatet'}.get(item.get('status'),'ukjent status')
             self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+': '+state+'.')
             if item.get('screenshot_error'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde: '+str(item['screenshot_error']))
             elif item.get('screenshot'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde lagret.')
@@ -310,7 +310,7 @@ class MainWindow(QMainWindow):
         results=self.lookup_results.get(allele_key(self.current_variant),[])
         by_provider={r['provider']:r for r in results}
         states={'found':'Treff','not_found':'Ingen treff','login_required':'Logg inn',
-                'license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig'}
+                'license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig','pending':'Analyse venter'}
         for i,provider in enumerate(self.settings.providers):
             result=by_provider.get(provider,{})
             state=states.get(result.get('status'),'Ikke søkt')

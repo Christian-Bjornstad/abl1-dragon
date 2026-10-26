@@ -8,7 +8,7 @@ from .models import flags
 from .workflow import allele_key,row_key
 
 PROVIDER_NAMES={'clinvar':'ClinVar','gnomad':'gnomAD','cosmic':'COSMIC','oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
-STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig'}
+STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig','pending':'Analyse venter'}
 
 def source_text(result):
     if not result:return 'Ikke slått opp'

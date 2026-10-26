@@ -2,6 +2,11 @@
 
 DRAGEN er distribuert under GPL-3.0. Se [LICENSE](../LICENSE).
 
+Databasevisninger og MTBP-flyt er tilpasset samme arbeidsmåte og nettsideselektorer
+som [Archer-prosess](https://github.com/Christian-Bjornstad/Archer-prosess).
+Archer-prosess-koden ble brukt som kilde ved tilpasningen; DRAGEN bruker sin egen
+Edge-forbindelse og variantkontroll. Det følger ingen ekstra nettleser med.
+
 IGV-sporene `assets/igv/abl1.bed` og `protein.bed` er generert fra den medfølgende offentlige RefSeq-kartleggingen NM_005157.6 i hg19. Proteinsporet viser referansetranslasjon. Kromosombånd for chr9 kommer fra [UCSC hg19 cytoBand](https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/cytoBand.txt.gz). Bygges med `scripts/build_igv_annotations.py`.
 
 Pillow brukes til PNG-bilder i Excel, under [HPND-lisensen](https://pillow.readthedocs.io/en/stable/about.html#license).

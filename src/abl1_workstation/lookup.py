@@ -17,7 +17,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
 
 PROVIDERS=('clinvar','gnomad','cosmic','oncokb','franklin','mtbp')
-STATUSES={'found','not_found','login_required','license_required','error','unsupported'}
+STATUSES={'found','not_found','login_required','license_required','error','unsupported','pending'}
 HOMES={'clinvar':'https://www.ncbi.nlm.nih.gov/clinvar/',
        'gnomad':'https://gnomad.broadinstitute.org/',
        'cosmic':'https://cancer.sanger.ac.uk/cosmic/',

@@ -291,11 +291,12 @@ class PortalBrowserTests(unittest.TestCase):
         with patch('abl1_workstation.lookup_browser.debugging_policy',return_value='policy blocked'):
             with self.assertRaisesRegex(RuntimeError,'policy blocked'):browser.open_login('franklin')
         factory.assert_not_called();self.assertFalse((self.root/'PortalProfiler').exists())
-    def test_mtbp_does_not_generate_or_delete_remote_reports(self):
+    def test_mtbp_does_not_submit_an_analysis_without_login_and_prepared_form(self):
         browser=PortalBrowser(self.root,edge_browser=self.edge,context_factory=unittest.mock.Mock())
-        result=browser.lookup('mtbp',V)
-        self.assertEqual(result['status'],'unsupported')
-        browser._context_factory.assert_not_called()
+        with patch('abl1_workstation.lookup_browser.debugging_policy',return_value=None),patch('abl1_workstation.mtbp.prepare',return_value=False),patch('abl1_workstation.mtbp.submit') as submit:
+            result=browser.lookup('mtbp',V)
+        self.assertEqual(result['status'],'login_required');submit.assert_not_called()
+        self.assertEqual(list(self.root.rglob('mtbp-job.json')),[]);browser.close()
     def test_loopback_socket_events_do_not_replace_response_or_use_proxy(self):
         fake_socket=unittest.mock.Mock();fake_socket.recv.side_effect=['{"method":"event"}','{"id":1,"result":{"ok":true}}']
         transport=unittest.mock.Mock();url='ws://127.0.0.1:12345/devtools/browser/12345678-abcd-1234-abcd-123456789012'

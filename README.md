@@ -48,6 +48,8 @@ Referansen kontrolleres mot hg19 chr9 før lesningene vises.
 
 **Søk i databaser** slår opp merkede alleler. Samme allel i flere prøver søkes én gang.
 Kort kildestatus vises under variantlisten. Innstillinger samler kildevalg og innlogging.
+Resultater vises og lagres kilde for kilde. Tidligere oppslag og bilder hentes tilbake
+når samme allel åpnes igjen; tidspunktet følger resultatet. Et nytt søk henter nye svar.
 E-post og passord lagres i Windows Credential Manager per lokal appdatamappe. Passord
 ligger ikke i innstillingsfilen og fylles bare inn i kontrollerte innloggingsskjemaer
 på riktig databasevert. MFA og endrede/eksterne SSO-skjemaer fullføres i Edge.
@@ -63,8 +65,12 @@ ikke tilstrekkelig. Kildestatus viser om bildet er klart. Etter innlogging eller
 nettleserkontroll: velg varianten og trykk **Hent bilder fra åpne sider**.
 Knappen bruker de åpne databasesidene uten å starte søket på nytt.
 Databaseoppslag krever nett og eventuell konto/tilgang.
-MTBP-innlogging støttes, men automatisk MTBP-analyse er ikke implementert.
-Ingen ekstern rapport opprettes eller slettes av MTBP-adapteren.
+Franklin-bilder omfatter tilgjengelige ACMG-/onkogenisitetsvisninger, evidenskort,
+prediksjoner og populasjonsfrekvenser. Manglende delbilder angis i rapporten.
+MTBP sender én variant per analyse med et tilfeldig DRAGEN-ID og sykdomskategorien
+**Blood**. Prøvenavnet sendes ikke. Ved **Analyse venter**: søk igjen for å hente
+samme analyse. Egen MTBP-rapport beholdes i portalen; appen sletter ingen rapporter.
+MTBP-rapporten angir om kildetreffet er basert på protein eller cDNA.
 
 Annotasjon bruker GRCh37/hg19 og NM_005157.6. PASS er caller-status.
 Kontrollkandidater er teknisk sortering uten validert deteksjonsgrense.
