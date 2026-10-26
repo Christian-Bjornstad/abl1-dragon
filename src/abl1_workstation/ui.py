@@ -252,7 +252,7 @@ class MainWindow(QMainWindow):
         from .lookup import LookupService
         rows={allele_key(v):dict(v) for v in self.variant_model.selected_rows()};providers=tuple(self.settings.providers)
         if not rows:return
-        modes={p:'browser' for p in ('franklin','oncokb','cosmic','mtbp')}
+        modes={p:'browser' for p in ('franklin','oncokb','mtbp')}
         def operation(emit):
             from .evidence_store import EvidenceStore
             receipts=EvidenceStore(self.store.path.parent)

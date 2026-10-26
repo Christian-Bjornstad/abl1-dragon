@@ -10,8 +10,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 ALLOWED_HOSTS = frozenset({
     'www.ncbi.nlm.nih.gov', 'pubmed.ncbi.nlm.nih.gov', 'franklin.genoox.com',
-    'www.oncokb.org', 'cancer.sanger.ac.uk', 'grch37-cancer.sanger.ac.uk', 'mtbp.org',
-    'gnomad.broadinstitute.org', 'civicdb.org', 'www.uniprot.org',
+    'www.oncokb.org', 'mtbp.org',
+    'civicdb.org', 'www.uniprot.org',
     'reg.clinicalgenome.org', 'clinicalgenome.org', 'www.clinicalgenome.org',
     'omim.org', 'www.omim.org',
 })

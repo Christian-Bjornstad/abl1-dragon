@@ -37,11 +37,11 @@ class DatabasePanelTests(unittest.TestCase):
         self.assertIn('ikke kontrollert', self.panel.status.text())
 
     def test_allele_query_excludes_sample_identity_and_updates_on_variant_change(self):
-        self.panel.providers.setCurrentIndex(self.panel.providers.findData('gnomad'))
+        self.panel.providers.setCurrentIndex(self.panel.providers.findData('clinvar'))
         self.panel.set_variant({'sample':'PATIENT_UNIQUE', 'chrom':'chr9', 'pos':133748283,
                                 'ref':'CT', 'alt':'TG', 'cdna':'c.944_945delinsTG', 'protein_snv_alone':'p.T315M'})
         self.panel.query_button.click()
-        self.assertIn('9-133748283-CT-TG', self.edge.opened[-1])
+        self.assertIn('9%3A133748283%3ACT%3ATG', self.edge.opened[-1])
         self.assertNotIn('PATIENT', self.edge.opened[-1])
         self.assertIn('CT>TG', self.panel.search_text.text())
         self.panel.set_variant(None)

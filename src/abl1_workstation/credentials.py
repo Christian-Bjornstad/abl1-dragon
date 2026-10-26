@@ -8,7 +8,7 @@ import hashlib
 from pathlib import Path
 import sys
 
-PROVIDERS=('franklin','oncokb','cosmic','mtbp')
+PROVIDERS=('franklin','oncokb','mtbp')
 
 class CredentialStoreError(RuntimeError):pass
 

@@ -33,7 +33,7 @@ class SettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             Path(folder,'settings.json').write_text('{broken')
             settings=Settings(folder);self.assertFalse(hasattr(settings,'tokens'))
-            self.assertEqual(settings.providers,['clinvar','gnomad','cosmic'])
+            self.assertEqual(settings.providers,['clinvar'])
 
 
 class SettingsPanelTests(unittest.TestCase):
@@ -109,6 +109,6 @@ class SettingsPanelTests(unittest.TestCase):
             browser.state='logged_in';panel.refresh_status();finish()
             self.assertEqual(panel.status_labels['franklin'].text(),'Innlogget')
             self.assertEqual(panel.login_buttons['franklin'].text(),'Åpne')
-            self.assertEqual(len(panel.findChildren(QLineEdit)),9)
+            self.assertEqual(len(panel.findChildren(QLineEdit)),7)
             self.assertTrue(all(field.echoMode()==QLineEdit.EchoMode.Password for field in panel.passwords.values()))
             self.assertFalse(hasattr(panel,'tokens'));panel.close()

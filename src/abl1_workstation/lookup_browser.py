@@ -26,11 +26,10 @@ from .lookup import canonical_identity, genomic_hgvs, _NoRedirect
 
 LOGIN_URLS={'franklin':'https://franklin.genoox.com/login',
             'oncokb':'https://www.oncokb.org/login',
-            'cosmic':'https://cancer.sanger.ac.uk/cosmic/login',
             'mtbp':'https://mtbp.org/analyse/'}
 PORTAL_HOSTS={'franklin':{'franklin.genoox.com'},'oncokb':{'www.oncokb.org'},
-              'cosmic':{'cancer.sanger.ac.uk','grch37-cancer.sanger.ac.uk'},'mtbp':{'mtbp.org'}}
-PUBLIC_HOSTS={'clinvar':{'www.ncbi.nlm.nih.gov'},'gnomad':{'gnomad.broadinstitute.org'}}
+              'mtbp':{'mtbp.org'}}
+PUBLIC_HOSTS={'clinvar':{'www.ncbi.nlm.nih.gov'}}
 PORTAL_HOSTS.update(PUBLIC_HOSTS)
 CLASS_LABELS=r'(?<![A-Za-z])(?:Likely pathogenic|Pathogenic|Likely benign|Benign|Uncertain significance|VUS|Likely oncogenic|Oncogenic|Likely neutral|Neutral|Inconclusive)(?![A-Za-z])'
 ACTIVE_CHALLENGE=r'access denied|verify (?:that )?you are (?:a )?human|checking your browser|complete (?:the )?(?:security|captcha)|(?:^|\n)\s*CAPTCHA\s*(?:$|[:!?])'
@@ -117,10 +116,6 @@ def _labelled_levels(text):
 
 
 def _portal_url(url):
-    # COSMIC's official GRCh37 host is used by mutation-result redirects.
-    if isinstance(url,str) and url.startswith('https://grch37-cancer.sanger.ac.uk/'):
-        checked_url('https://cancer.sanger.ac.uk/'+url.split('https://grch37-cancer.sanger.ac.uk/',1)[1])
-        return url
     return checked_url(url)
 
 
@@ -174,13 +169,6 @@ def parse_portal_snapshot(provider,variant,snapshot):
         exact=route_match is not None and route_match[1]==hgvs and ref==['GRCh37'] and hgvs in compact and not build38
         ready=bool(re.search(r'Oncogenic|Likely oncogenic|Resistance|Mutation effect|Biological effect',text,re.I))
         identity_method='OncoKB eksakt HGVSg-rute + refGenome=GRCh37 + synlig genomisk allel'
-    elif provider=='cosmic':
-        coordinate=f"{identity['chrom']}:{identity['pos']}-{identity['pos']+len(identity['ref'])-1}"
-        cdna=variant.get('cdna','');protein=variant.get('protein_snv_alone','')
-        exact=(len(identity['ref'])==len(identity['alt'])==1 and build37 and not build38
-               and coordinate in compact and cdna and cdna in compact and 'NM_005157' in text and re.search(r'\bABL1\b',text))
-        ready='Overview' in text and ('Tissue distribution' in text or 'Samples' in text)
-        identity_method='COSMIC GRCh37 + synlig NM_005157/cDNA-SNV + genomisk lokus'
     else:return {**result,'status':'unsupported','summary':'Ingen kontrollert portaluttrekker for denne kilden.'}
     if not exact:
         result['summary']='Portalen kunne ikke bekrefte eksakt referansebygg, posisjon og allel. Ingen klassifikasjon ble brukt.';return result
@@ -200,12 +188,12 @@ def parse_portal_snapshot(provider,variant,snapshot):
     readable_page=(provider=='oncokb' and snapshot.get('oncokb_result_visible') is True
                    and 'Clinical Implications for this Biomarker' in text)
     readable_page=readable_page or (provider=='franklin' and 'Somatic Clinical Evidence' in text and 'AMP Classification' in text)
-    if provider!='cosmic' and not classifications and not readable_page:return result
+    if not classifications and not readable_page:return result
     levels=_labelled_levels(text)
     excerpt=[label+': '+value for label,value in classifications+levels]
     if biological_effect:excerpt.append('Biological Effect: '+biological_effect)
     classification='; '.join(label+': '+value for label,value in classifications) if provider=='franklin' else '; '.join(value for _,value in classifications)
-    summary=(' | '.join(excerpt[:8]) if excerpt else 'COSMIC oversikt og kildeinnhold er tilgjengelig.')
+    summary=' | '.join(excerpt[:8])
     if readable_page and not classifications:
         summary='Klassifikasjonen kunne ikke leses automatisk. Se variantens kildebilde og lenke.'
     return {**result,'status':'found','classification':classification,'evidence_level':'; '.join(label+': '+value for label,value in levels),
@@ -780,9 +768,6 @@ class PortalBrowser:
             return 'login_required','Logg inn i appens Edge-vindu, åpne variantresultatet og velg «Hent bilder fra åpne sider».'
         if snapshot.get('ready_state','complete')!='complete' or snapshot.get('page_busy') is True:
             return 'page_not_ready','Databasesiden er ikke ferdig lastet. Vent og velg «Hent bilder fra åpne sider».'
-        if provider=='gnomad' and (re.search(r'^\s*Loading variant(?:\.{3}|…)?\s*$',text,re.I|re.M)
-                                  or not re.search(r'Allele (?:Count|Number|Frequency)|Population Frequencies',text,re.I)):
-            return 'page_not_ready','gnomAD laster fortsatt variantinnholdet. Vent og hent bildene igjen.'
         valid=(cls._public_identity(provider,variant,snapshot) if provider in PUBLIC_HOSTS
                else parse_portal_snapshot(provider,variant,snapshot).get('identity_verified') is True)
         if not valid:return 'identity_mismatch','Siden bekrefter ikke valgt GRCh37-allel. Åpne riktig variant og velg «Hent bilder fra åpne sider».'
@@ -792,7 +777,6 @@ class PortalBrowser:
     def _public_identity(provider,variant,snapshot):
         if not _provider_page(provider,snapshot.get('url','')) or snapshot.get('password_visible'):return False
         text=unquote(str(snapshot.get('text','')))
-        compact=re.sub(r'\s+','',text)
         identity=canonical_identity(variant)
         if provider=='clinvar':
             hgvs=genomic_hgvs(variant)
@@ -802,9 +786,7 @@ class PortalBrowser:
             # Never accept GRCh38 NC_000009.12 or infer a build from a position.
             if identity['chrom']=='9':candidates.append('NC_000009.11:'+hgvs.split(':',1)[1])
             return any(re.search(r'(?<![A-Za-z0-9_.])'+re.escape(value)+r'(?![A-Za-z0-9_>])',text) is not None for value in candidates)
-        needle=f"{identity['chrom']}-{identity['pos']}-{identity['ref']}-{identity['alt']}"
-        parts=urlsplit(snapshot.get('url',''))
-        return parts.path=='/variant/'+needle and parse_qs(parts.query).get('dataset')==['gnomad_r2_1'] and needle in compact and bool(re.search(r'GRCh37|hg19',compact))
+        return False
 
     def capture_result(self,provider,variant,result):
         if result.get('status')!='found' or provider not in PUBLIC_HOSTS:return result
@@ -850,7 +832,7 @@ class PortalBrowser:
         """
         if provider=='mtbp':
             return result if result.get('screenshot') else self._capture_error(result,'resume_analysis','Bruk «Søk i databaser» for å hente samme MTBP-analyse og bildet.')
-        resumable=(provider in {'franklin','oncokb','cosmic'} and result.get('status') in {'login_required','error'})
+        resumable=(provider in {'franklin','oncokb'} and result.get('status') in {'login_required','error'})
         if provider not in PORTAL_HOSTS or provider=='mtbp' or (result.get('status')!='found' and not resumable):
             return self._capture_error(result,'capture_unsupported','Ingen identitetskontrollert variant klar for bildeuttak.')
         if not self._result_matches(provider,variant,result):
@@ -879,7 +861,7 @@ class PortalBrowser:
         if provider=='mtbp':
             from .mtbp import lookup_mtbp
             with self._locks[provider]:return lookup_mtbp(self,variant,settings or {})
-        if provider not in ('franklin','oncokb','cosmic'):return {'status':'unsupported','summary':'Kilden bruker offentlig API-adapter.'}
+        if provider not in ('franklin','oncokb'):return {'status':'unsupported','summary':'Ingen portaloppslagsadapter for denne kilden.'}
         settings=settings or {}
         with self._locks[provider]:
             context=self._context(provider)
@@ -892,10 +874,6 @@ class PortalBrowser:
             if provider=='franklin':
                 url='https://franklin.genoox.com/clinical-db/home'
             elif provider=='oncokb':url='https://www.oncokb.org/hgvsg/'+quote(genomic_hgvs(variant),safe=':>')+'?refGenome=GRCh37'
-            else:
-                mutation_id=str(settings.get('cosmic_mutation_id') or '')
-                url=('https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id='+mutation_id if re.fullmatch(r'[0-9]+',mutation_id)
-                     else 'https://grch37-cancer.sanger.ac.uk/cosmic/search?q='+quote('ABL1 '+str(variant.get('cdna',''))))
             context.navigate(url)
             timeout=min(max(float(settings.get('browser_timeout_seconds',45 if provider=='franklin' else 30)),5),90)
             deadline=time.monotonic()+timeout;result=None;login_attempted=False;query_retried=False;franklin_submitted=False
@@ -918,12 +896,6 @@ class PortalBrowser:
                 if provider!='franklin' and login_attempted and not query_retried and auth.get('status')=='logged_in':
                     context.navigate(url);query_retried=True;time.sleep(.5);continue
                 if result['status'] in {'not_found','license_required'}:return result
-                if provider=='cosmic' and hasattr(context,'evaluate'):
-                    # Only follow a specific mutation-result link, never a login,
-                    # download, report creation, acceptance, or account action.
-                    target=context.evaluate("Array.from(document.querySelectorAll('a[href]')).map(a=>a.href).find(x=>/^https:\\/\\/(?:grch37-)?cancer\\.sanger\\.ac\\.uk\\/cosmic\\/(?:mutation\\/overview|mutation\\/.*overview)/.test(x))||null")
-                    if target and target!=snapshot.get('url') and urlsplit(target).hostname in PORTAL_HOSTS['cosmic']:
-                        context.navigate(target)
                 time.sleep(.75)
             return result or {'status':'error','summary':'Portalresultatet ble ikke ferdig innen tidsgrensen.'}
     def close(self):

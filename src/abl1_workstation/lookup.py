@@ -1,6 +1,6 @@
 """Selected-allele database retrieval; credentials and sample data are not persisted.
 
-Protocols follow NCBI E-utilities, gnomAD's public GraphQL API and the
+Protocols follow NCBI E-utilities and the
 API/browser lanes used by Archer-prosess. A site login is not API authorization.
 """
 from __future__ import annotations
@@ -16,11 +16,9 @@ from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
 
-PROVIDERS=('clinvar','gnomad','cosmic','oncokb','franklin','mtbp')
+PROVIDERS=('clinvar','oncokb','franklin','mtbp')
 STATUSES={'found','not_found','login_required','license_required','error','unsupported','pending'}
 HOMES={'clinvar':'https://www.ncbi.nlm.nih.gov/clinvar/',
-       'gnomad':'https://gnomad.broadinstitute.org/',
-       'cosmic':'https://cancer.sanger.ac.uk/cosmic/',
        'oncokb':'https://www.oncokb.org/',
        'franklin':'https://franklin.genoox.com/clinical-db/home','mtbp':'https://mtbp.org/'}
 MAX_RESPONSE=8*1024*1024
@@ -71,9 +69,9 @@ class HttpTransport:
     def __init__(self,timeout=20):self.timeout=timeout
     def __call__(self,method,url,*,params=None,body=None,headers=None):
         host=urlsplit(url).hostname
-        allowed={'eutils.ncbi.nlm.nih.gov','gnomad.broadinstitute.org','clinicaltables.nlm.nih.gov','www.oncokb.org','api.genoox.com'}
+        allowed={'eutils.ncbi.nlm.nih.gov','www.oncokb.org','api.genoox.com'}
         if urlsplit(url).scheme!='https' or host not in allowed:raise ValueError('Ukjent database-API.')
-        delay=0.42 if host=='eutils.ncbi.nlm.nih.gov' else 6.2 if host=='gnomad.broadinstitute.org' else 0
+        delay=0.42 if host=='eutils.ncbi.nlm.nih.gov' else 0
         with self._lock:
             wait=delay-(time.monotonic()-self._last.get(host,0))
             if wait>0:time.sleep(wait)
@@ -115,7 +113,7 @@ class LookupService:
                 'accession':'','url':HOMES.get(provider,''),'checked_at':datetime.now(timezone.utc).isoformat(),
                 'variant_key':variant_key(identity) if identity else '', 'identity':identity,**details}
 
-    def lookup(self,variant,providers=('clinvar','gnomad'),*,tokens=None,settings=None,progress=None,browser_adapter=None,completed=None):
+    def lookup(self,variant,providers=('clinvar',),*,tokens=None,settings=None,progress=None,browser_adapter=None,completed=None):
         """Fetch only the selected public allele; tokens live in this call only.
 
         Optional portal adapter contract: .lookup(provider, sanitized_variant,
@@ -152,17 +150,6 @@ class LookupService:
 
     def _browser(self,provider,v,settings,adapter):
         if adapter is None:return self._result(provider,canonical_identity(v),'unsupported','Nettleseroppslag er ikke tilgjengelig i dette miljøet.')
-        if provider=='cosmic':
-            settings={k:value for k,value in settings.items() if k!='cosmic_mutation_id'}
-            try:
-                resolved=self._cosmic(v,{},settings)
-                if resolved.get('status')=='found' and resolved.get('identity_verified'):
-                    records=resolved.get('details',{}).get('records',[])
-                    ids=[re.fullmatch(r'(?:COSM)?([0-9]+)',str(r.get('MutationID') or '')) for r in records]
-                    numeric=next((match[1] for match in ids if match),None)
-                    if numeric:settings['cosmic_mutation_id']=numeric
-            except HTTPError as error:error.close()
-            except (OSError,ValueError,TypeError,KeyError):pass
         data=adapter.lookup(provider,v,settings=settings)
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)
@@ -214,65 +201,7 @@ class LookupService:
         if count>len(ids):return self._result('clinvar',identity,'error','Kandidatsøket var avkortet. Fravær av eksakt alleltreff kan ikke avgjøres.')
         return self._result('clinvar',identity,'not_found','Ingen direkte ClinVar-post matchet eksakt GRCh37-posisjon, REF og ALT. Dette betyr ikke benign.')
 
-    def _gnomad(self,v,tokens,settings):
-        identity=canonical_identity(v);variant_id=f"{v['chrom']}-{v['pos']}-{v['ref']}-{v['alt']}"
-        query='query Variant($variantId: String!) { variant(variantId: $variantId, dataset: gnomad_r2_1) { variant_id reference_genome rsids exome { ac an af filters } genome { ac an af filters } } }'
-        payload=_json(self.transport('POST','https://gnomad.broadinstitute.org/api/',body={'query':query,'variables':{'variantId':variant_id}}))
-        if not isinstance(payload,dict):raise ValueError('Uventet GraphQL-svar.')
-        if payload.get('errors'):
-            errors=payload['errors']
-            if (isinstance(errors,list) and errors and all(isinstance(e,dict) and e.get('message')=='Variant not found' for e in errors)
-                    and isinstance(payload.get('data'),dict) and payload['data'].get('variant') is None):
-                return self._result('gnomad',identity,'not_found','Ingen eksakt allel i gnomAD v2.1.1. API-et svarte «Variant not found».',
-                    url='https://gnomad.broadinstitute.org/variant/'+variant_id+'?dataset=gnomad_r2_1')
-            raise ValueError('GraphQL-feil.')
-        if not isinstance(payload.get('data'),dict) or 'variant' not in payload['data']:raise ValueError('Ugyldig GraphQL-svar.')
-        record=payload['data']['variant'];url='https://gnomad.broadinstitute.org/variant/'+variant_id+'?dataset=gnomad_r2_1'
-        if record is None:return self._result('gnomad',identity,'not_found','Ingen eksakt allel i gnomAD v2.1.1; dette dokumenterer ikke somatisk betydning.',url=url)
-        if record.get('variant_id')!=variant_id or record.get('reference_genome')!='GRCh37':raise ValueError('gnomAD-identitet avviker.')
-        summary=['gnomAD v2.1.1 (GRCh37)'];details={}
-        for name,label in [('exome','Eksomer'),('genome','Genomer')]:
-            row=record.get(name)
-            if row is None:details[name]=None;continue
-            ac=row.get('ac');an=row.get('an');af=row.get('af')
-            if isinstance(ac,bool) or isinstance(an,bool) or not isinstance(ac,int) or not isinstance(an,int) or ac<0 or an<ac:raise ValueError('Ugyldige populasjonstall.')
-            if af is not None and (not isinstance(af,(int,float)) or not 0<=af<=1):raise ValueError('Ugyldig frekvens.')
-            details[name]={'ac':ac,'an':an,'af':af,'filters':row.get('filters',[])}
-            summary.append(f'{label}: AC/AN {ac}/{an}, AF '+(format(af,'.6g') if af is not None else 'mangler'))
-        return self._result('gnomad',identity,'found','; '.join(summary),accession=variant_id,url=url,
-            source_version='gnomAD v2.1.1',details=details,identity_verified=True,
-            identity_method='variant_id + reference_genome; exome/genome holdes atskilt')
 
-    def _cosmic(self,v,tokens,settings):
-        identity=canonical_identity(v)
-        if len(v['ref'])!=1 or len(v['alt'])!=1 or not re.fullmatch(r'c\.\d+[ACGT]>[ACGT]',v.get('cdna','')):
-            return self._result('cosmic',identity,'unsupported','Det offentlige COSMIC-utdraget kan bare identitetskontrolleres for en ABL1-SNV med cDNA-annotasjon. Bruk portaloppslag for flerbasealleler.')
-        if not v['cdna'].endswith(v['ref']+'>'+v['alt']):
-            return self._result('cosmic',identity,'unsupported','cDNA-annotasjonen avviker fra REF/ALT. Ingen COSMIC-klassifikasjon ble brukt.')
-        fields=['MutationID','GeneName','MutationCDS','MutationAA','MutationGenomePosition','MutationStrand','GRChVer','AccessionNumber','PubmedPMID']
-        payload=_json(self.transport('GET','https://clinicaltables.nlm.nih.gov/api/cosmic/v4/search',params={
-            'terms':'ABL1 '+v['cdna'],'grchv':'37','maxList':'500','ef':','.join(fields),
-            'q':'GeneName:ABL1 AND MutationCDS:"'+v['cdna']+'"'}))
-        if not isinstance(payload,list) or len(payload)<3 or not isinstance(payload[1],list):raise ValueError('Ugyldig COSMIC-utdrag.')
-        total=int(payload[0]);extras=payload[2] or {};ids=payload[1]
-        if not isinstance(extras,dict):raise ValueError('Ugyldig COSMIC-felter.')
-        matches=[];unverified=[]
-        for index,code in enumerate(ids):
-            row={name:values[index] if isinstance(values,list) and index<len(values) else None for name in fields for values in [extras.get(name,[])]}
-            coordinate=f"{v['chrom']}:{v['pos']}-{v['pos']}"
-            if str(row['GRChVer'])=='37' and row['GeneName']=='ABL1' and row['MutationGenomePosition']==coordinate and row['MutationStrand']=='+' and row['MutationCDS']==v['cdna'] and str(row['AccessionNumber']).split('.')[0]=='NM_005157':
-                matches.append({k:row[k] for k in fields})
-            elif (str(row['GRChVer'])=='37' and row['GeneName']=='ABL1' and row['MutationGenomePosition']==coordinate
-                  and (str(row['AccessionNumber']).split('.')[0]!='NM_005157' or row['MutationStrand']!='+')):
-                unverified.append({k:row[k] for k in fields})
-        if matches:
-            accession=', '.join(dict.fromkeys(str(r['MutationID']) for r in matches if r['MutationID']))
-            return self._result('cosmic',identity,'found',f'COSMIC via NLM: {len(matches)} identitetskontrollerte SNV-poster i et begrenset offentlig utdrag. Ingen klinisk klassifikasjon.',
-                accession=accession,details={'records':matches,'returned':len(ids),'total':total,'limited_public_extract':True},identity_verified=True,
-                identity_method='GRCh37 + lokus + pluss-strand + NM_005157 + eksakt cDNA-SNV')
-        if unverified:return self._result('cosmic',identity,'unsupported','COSMIC via NLM returnerte posisjonskandidater, men transkript/REF/ALT kunne ikke bekreftes. Ingen eksakt allelklassifikasjon ble brukt.',details={'candidate_count':len(unverified),'records':unverified,'limited_public_extract':True})
-        if total>len(ids):return self._result('cosmic',identity,'error','COSMIC-utdraget var avkortet. Fravær av eksakt treff kan ikke avgjøres.')
-        return self._result('cosmic',identity,'not_found','Ingen identitetskontrollert SNV i COSMICs begrensede NLM-utdrag. Full COSMIC er ikke undersøkt.')
 
     def _oncokb(self,v,tokens,settings):
         identity=canonical_identity(v);token=tokens.get('oncokb')

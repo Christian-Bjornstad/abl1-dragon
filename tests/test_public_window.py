@@ -69,7 +69,7 @@ class PublicWindowTests(unittest.TestCase):
         self.assertTrue(w.retry_images_button.isEnabled())
     def test_export_button_remains_inside_viewport_after_loading_all_sources(self):
         from PyQt6.QtCore import QPoint
-        w=self.window;w.settings.providers=['clinvar','gnomad','cosmic','oncokb','franklin','mtbp']
+        w=self.window;w.settings.providers=['clinvar','oncokb','franklin','mtbp']
         w._apply_session(load_pilot());w.pages.widget(0).setMinimumHeight(900)
         w.resize(1100,700);w.show();self.app.processEvents()
         bottom=w.excel_button.mapTo(w.centralWidget(),QPoint(0,w.excel_button.height())).y()
@@ -79,7 +79,7 @@ class PublicWindowTests(unittest.TestCase):
         w=self.window;w._apply_session(load_pilot());w.select_variant('DEMO-A',133748283)
         variant=dict(w.current_variant);key=allele_key(variant)
         w.lookup_results[key]=[{'provider':'clinvar','status':'found','screenshot_error':'Waiting'},
-                               {'provider':'cosmic','status':'not_found'}]
+                               {'provider':'oncokb','status':'not_found'}]
         class Browser:
             def recapture_result(self,provider,row,result):
                 self.call=(provider,dict(row))

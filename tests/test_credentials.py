@@ -23,13 +23,13 @@ class CredentialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             backend=MemoryVault();store=CredentialStore(directory,backend=backend)
             store.save('franklin','synthetic@example.invalid','NOT_A_REAL_PASSWORD')
-            store.save('cosmic','other@example.invalid','OTHER_TEST_PASSWORD')
+            store.save('oncokb','other@example.invalid','OTHER_TEST_PASSWORD')
             again=CredentialStore(directory,backend=backend)
             self.assertEqual(again.get('franklin'),('synthetic@example.invalid','NOT_A_REAL_PASSWORD'))
             self.assertEqual(len(list(Path(directory).iterdir())),0)
             self.assertEqual(CredentialStore(directory+'-other',backend=backend).get('franklin'),('',''))
             store.delete('franklin');self.assertEqual(store.get('franklin'),('',''))
-            self.assertTrue(store.get('cosmic')[1])
+            self.assertTrue(store.get('oncokb')[1])
     def test_unknown_provider_and_incomplete_account_are_rejected(self):
         store=CredentialStore('.',backend=MemoryVault())
         with self.assertRaises(ValueError):store.save('attacker','x','password')

@@ -9,9 +9,10 @@ from abl1_workstation.database_browser import EdgeBrowser, checked_url
 
 
 class EdgeBrowserTests(unittest.TestCase):
-    def test_cosmic_official_grch37_host_is_allowed_without_relaxing_host_checks(self):
-        self.assertEqual(checked_url('https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id=123'),
-                         'https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id=123')
+    def test_removed_database_hosts_are_rejected(self):
+        for url in ('https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id=123',
+                    'https://cancer.sanger.ac.uk/cosmic/','https://gnomad.broadinstitute.org/'):
+            with self.assertRaises(ValueError):checked_url(url)
         with self.assertRaises(ValueError):checked_url('https://grch37-cancer.sanger.ac.uk.evil.invalid/')
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='ABL1 Edge Å ');self.root=Path(self.tmp.name)

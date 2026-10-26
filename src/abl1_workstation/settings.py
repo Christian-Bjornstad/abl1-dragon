@@ -10,31 +10,34 @@ from .ui_common import label
 from .credentials import CredentialStore,CredentialStoreError
 
 HOMES={'clinvar':'https://www.ncbi.nlm.nih.gov/clinvar/',
-       'gnomad':'https://gnomad.broadinstitute.org/',
-       'cosmic':'https://cancer.sanger.ac.uk/cosmic/login',
        'oncokb':'https://www.oncokb.org/',
        'franklin':'https://franklin.genoox.com/', 'mtbp':'https://mtbp.org/'}
-PORTALS=('franklin','oncokb','cosmic','mtbp')
+PORTALS=('franklin','oncokb','mtbp')
 
 
 class Settings:
     def __init__(self,folder):
         self.path=Path(folder)/'settings.json'
         reference=resource_root()/'reference/chr9.fa'
-        self.providers=['clinvar','gnomad','cosmic']
+        self.providers=['clinvar'];pruned=False
         self.reference=str(reference) if reference.is_file() else ''
         try:
             if self.path.exists() and self.path.stat().st_size<16000:
                 data=json.loads(self.path.read_text(encoding='utf-8'))
                 if isinstance(data,dict):
                     providers=data.get('providers')
-                    if isinstance(providers,list):self.providers=[p for p in providers if p in HOMES]
+                    if isinstance(providers,list):
+                        self.providers=[p for p in providers if isinstance(p,str) and p in HOMES]
+                        pruned=self.providers!=providers
                     if isinstance(data.get('reference'),str):self.reference=data['reference'] or self.reference
         except (OSError,ValueError,TypeError):pass
         if not self.reference or not Path(self.reference).is_file() or not Path(self.reference+'.fai').is_file():
             from .reference_bundle import bundled_reference
             prepared=bundled_reference(resource_root(),folder)
             if prepared:self.reference=str(prepared)
+        if pruned:
+            try:self.save()
+            except OSError:pass
 
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)

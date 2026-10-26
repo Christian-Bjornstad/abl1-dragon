@@ -37,17 +37,6 @@
       "documentation": "https://api.oncokb.org/oncokb-website/api"
     },
     {
-      "id": "cosmic",
-      "name": "COSMIC",
-      "status": "krever tilgang",
-      "access": "Lisens og registrering må avklares for lokal bruk/nedlasting",
-      "description": "Søk på gen og proteinendring. Søket er ikke bevis for eksakt alleltreff.",
-      "home": "https://cancer.sanger.ac.uk/cosmic/",
-      "queryTemplate": "https://cancer.sanger.ac.uk/cosmic/search?q={gene}%20{protein}",
-      "queryKind": "search",
-      "documentation": "https://www.sanger.ac.uk/tool/cosmic/"
-    },
-    {
       "id": "mtbp",
       "name": "MTBP",
       "status": "krever tilgang",
@@ -57,18 +46,6 @@
       "queryTemplate": "https://mtbp.org/analyse/",
       "queryKind": "home",
       "documentation": "https://mtbp.org/"
-    },
-    {
-      "id": "gnomad",
-      "name": "gnomAD",
-      "status": "lenke",
-      "access": "Offentlig variantvisning; intet frekvenssnapshot hentet",
-      "description": "GRCh37 kobles til gnomAD v2.1.1. Populasjonsfrekvens avgjør ikke resistens eller teknisk kvalitet.",
-      "home": "https://gnomad.broadinstitute.org/",
-      "queryTemplate": "https://gnomad.broadinstitute.org/variant/{chrom}-{pos}-{ref}-{alt}?dataset=gnomad_r2_1",
-      "queryKind": "exact",
-      "assembly": "GRCh37",
-      "documentation": "https://gnomad.broadinstitute.org/help"
     },
     {
       "id": "civic",

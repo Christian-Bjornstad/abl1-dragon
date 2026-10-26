@@ -6,9 +6,9 @@ No consent, CAPTCHA, account or report-creation control is clicked here.
 import json,time
 from urllib.parse import urlsplit,urlunsplit
 
-HOSTS={'clinvar':['www.ncbi.nlm.nih.gov'],'gnomad':['gnomad.broadinstitute.org'],
+HOSTS={'clinvar':['www.ncbi.nlm.nih.gov'],
        'franklin':['franklin.genoox.com'],'oncokb':['www.oncokb.org'],
-       'cosmic':['cancer.sanger.ac.uk','grch37-cancer.sanger.ac.uk'],'mtbp':['mtbp.org']}
+       'mtbp':['mtbp.org']}
 VISIBLE="""const visible=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>0;};"""
 
 
@@ -20,7 +20,7 @@ def dismiss_cookies(context,provider):
     # Only reject optional cookies inside known cookie containers. Never hide
     # arbitrary dialogs or accept terms on behalf of the user.
     clicked=evaluate(context,provider,"""
-      const ids={franklin:'#CybotCookiebotDialogBodyButtonDecline',cosmic:'#cookie-reject',oncokb:'#onetrust-reject-all-handler'};
+      const ids={franklin:'#CybotCookiebotDialogBodyButtonDecline',oncokb:'#onetrust-reject-all-handler'};
       const specific=ids["""+json.dumps(provider)+"""];
       if(specific){const buttons=[...document.querySelectorAll(specific)].filter(visible);
         if(buttons.length===1&&/^(Deny|Reject all|Accept essential)$/i.test(buttons[0].innerText.trim())&&!buttons[0].disabled){buttons[0].click();return true;}}

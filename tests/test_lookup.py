@@ -80,54 +80,15 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(result['status'],'error');self.assertNotIn('SHOULD_NOT_LEAK',str(result))
 
     def test_wrong_response_shapes_fail_per_provider_without_aborting_other_sources(self):
-        service,_=self.service([],[],[])
-        results=service.lookup(VARIANT,['clinvar','gnomad','oncokb'],tokens={'oncokb':'test'})
-        self.assertEqual([r['status'] for r in results],['error','error','error'])
+        service,_=self.service([],[])
+        results=service.lookup(VARIANT,['clinvar','oncokb'],tokens={'oncokb':'test'})
+        self.assertEqual([r['status'] for r in results],['error','error'])
 
-    def test_gnomad_exact_id_retains_zero_frequencies_without_summing_cohorts(self):
-        data={'data':{'variant':{'variant_id':'9-133748283-C-T','reference_genome':'GRCh37','rsids':['rs123'],
-              'exome':{'ac':0,'an':100,'af':0,'filters':[]},'genome':{'ac':2,'an':100,'af':0.02,'filters':['TEST']}}}}
-        service,transport=self.service(data);result=service.lookup(VARIANT,['gnomad'])[0]
-        self.assertEqual(result['status'],'found');self.assertEqual(result['details']['exome']['af'],0)
-        self.assertNotIn('aggregated',str(result));self.assertNotIn('NEVER_SEND_SAMPLE',str(transport.calls))
-        self.assertEqual(transport.calls[0][2]['body']['variables']['variantId'],'9-133748283-C-T')
 
-    def test_gnomad_graphql_error_or_wrong_identity_is_error_not_absent(self):
-        for response in ({'errors':[{'message':'rate limited'}]},
-                         {'data':{'variant':{'variant_id':'9-133748283-C-G','reference_genome':'GRCh37'}}}):
-            service,_=self.service(response)
-            self.assertEqual(service.lookup(VARIANT,['gnomad'])[0]['status'],'error')
 
-    def test_gnomad_documented_variant_not_found_error_is_distinct_from_other_graphql_errors(self):
-        service,_=self.service({'errors':[{'message':'Variant not found'}],'data':{'variant':None}})
-        self.assertEqual(service.lookup(VARIANT,['gnomad'])[0]['status'],'not_found')
 
-    def test_cosmic_basic_hit_requires_build_position_strand_and_cdna(self):
-        extras={'MutationID':['COSM123'],'GeneName':['ABL1'],'MutationCDS':['c.944C>T'],'MutationAA':['p.T315I'],
-                'MutationGenomePosition':['9:133748283-133748283'],'MutationStrand':['+'],'GRChVer':['37'],
-                'AccessionNumber':['NM_005157.6'],'PubmedPMID':['12345']}
-        service,_=self.service([1,['COSM123'],extras,[]]);result=service.lookup(VARIANT,['cosmic'])[0]
-        self.assertEqual(result['status'],'found');self.assertEqual(result['classification'],'')
-        self.assertIn('NLM',result['summary']);self.assertEqual(result['accession'],'COSM123')
-        extras['MutationCDS']=['c.944C>G'];service,_=self.service([1,['COSM123'],extras,[]])
-        self.assertEqual(service.lookup(VARIANT,['cosmic'])[0]['status'],'not_found')
 
-    def test_cosmic_truncated_search_and_mnv_do_not_report_false_absence(self):
-        service,_=self.service([1000,[],{},[]])
-        self.assertEqual(service.lookup(VARIANT,['cosmic'])[0]['status'],'error')
-        service,transport=self.service()
-        self.assertEqual(service.lookup(dict(VARIANT,ref='CT',alt='TG'),['cosmic'])[0]['status'],'unsupported')
-        self.assertEqual(transport.calls,[])
 
-    def test_cosmic_ensembl_transcript_only_hit_remains_unverified(self):
-        extras={'MutationID':['123'],'GeneName':['ABL1'],'MutationCDS':['c.944C>T'],'MutationAA':['p.T315I'],
-                'MutationGenomePosition':['9:133748283-133748283'],'MutationStrand':['+'],'GRChVer':['37'],
-                'AccessionNumber':['ENST00000318560.5']}
-        service,_=self.service([1,['123'],extras,[]])
-        result=service.lookup(VARIANT,['cosmic'])[0]
-        self.assertEqual(result['status'],'unsupported')
-        self.assertIn('transkript',result['summary'])
-        self.assertEqual(result['details']['candidate_count'],1)
 
     def test_oncokb_uses_genomic_query_and_token_header_without_echoing_credentials(self):
         response={'query':{'hgvs':'9:g.133748283C>T','referenceGenome':'GRCh37'},'variantExist':True,

@@ -7,7 +7,7 @@ from . import APP_NAME,__version__
 from .models import flags
 from .workflow import allele_key,row_key
 
-PROVIDER_NAMES={'clinvar':'ClinVar','gnomad':'gnomAD','cosmic':'COSMIC','oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
+PROVIDER_NAMES={'clinvar':'ClinVar','oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
 STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig','pending':'Analyse venter'}
 
 def source_text(result):
@@ -101,11 +101,12 @@ def export_sample_reports(session,rows,lookup_results,destination,**options):
         for temporary,_ in staged:temporary.unlink(missing_ok=True)
     return list(paths.values())
 
-def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnomad','cosmic','oncokb','franklin'),samples=None,selection='',igv_images=None,igv_errors=None):
+def export_report(session,rows,lookup_results,path,*,providers=('clinvar','oncokb','franklin','mtbp'),samples=None,selection='',igv_images=None,igv_errors=None):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment,Font,PatternFill
     from openpyxl.comments import Comment
     rows=list(rows)
+    providers=tuple(p for p in providers if p in PROVIDER_NAMES)
     if not rows:raise ValueError('Merk minst én variant før eksport.')
     book=Workbook();book.remove(book.active);used=set()
     for variant in rows:
