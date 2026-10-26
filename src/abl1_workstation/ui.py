@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         from .igv_live import LiveIgvWidget
-        root=QWidget();root.setObjectName('AppRoot');root.setMinimumWidth(1120)
+        root=QWidget();root.setObjectName('AppRoot')
         shell=QHBoxLayout(root);shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
         rail=QFrame();rail.setObjectName('NavigationRail');rail.setFixedWidth(180)
         nav=QVBoxLayout(rail);nav.setContentsMargins(14,24,14,18);nav.setSpacing(10)
@@ -124,14 +124,15 @@ class MainWindow(QMainWindow):
         self.settings_panel=SettingsPanel(self.settings,self.database_browser)
         self.settings_panel.changed.connect(self._settings_changed)
         self.settings_panel.busyChanged.connect(lambda busy:self._update_actions())
-        self.pages.addWidget(self.settings_panel);layout.addWidget(self.pages,1);shell.addWidget(content,1)
+        self.pages.addWidget(self.settings_panel);layout.addWidget(self.pages,1)
+        content.setMinimumSize(940,650)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(content);shell.addWidget(scroll,1)
         self.cancel_export_button=button('Avbryt eksport',self.cancel_export);self.cancel_export_button.hide()
         layout.addWidget(self.cancel_export_button)
         for control in (self.sample_filter,self.status_filter):control.currentTextChanged.connect(self._filter)
         self.search.textChanged.connect(self._filter);self.variant_proxy.rowsInserted.connect(self._update_count)
         shell.setSizeConstraint(QLayout.SizeConstraint.SetDefaultConstraint)
-        root.setMinimumSize(1120,650)
-        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(root);self.setCentralWidget(scroll)
+        self.setCentralWidget(root)
         self.statusBar().showMessage('Velg analysemappe');self._render_sources();self._update_actions()
 
     def navigate(self,index):

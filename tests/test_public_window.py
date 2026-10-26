@@ -58,5 +58,12 @@ class PublicWindowTests(unittest.TestCase):
         w=self.window;w._apply_session(load_pilot())
         w.lookup_results['old']=[{'status':'found'}];w._apply_session(load_pilot())
         self.assertEqual(w.lookup_results,{})
+    def test_export_button_remains_inside_viewport_after_loading_all_sources(self):
+        from PyQt6.QtCore import QPoint
+        w=self.window;w.settings.providers=['clinvar','gnomad','cosmic','oncokb','franklin','mtbp']
+        w._apply_session(load_pilot());w.pages.widget(0).setMinimumHeight(900)
+        w.resize(1100,700);w.show();self.app.processEvents()
+        bottom=w.excel_button.mapTo(w.centralWidget(),QPoint(0,w.excel_button.height())).y()
+        self.assertLessEqual(bottom,w.centralWidget().height())
 
 if __name__=='__main__':unittest.main()
