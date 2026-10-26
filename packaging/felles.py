@@ -251,7 +251,10 @@ def _installation_finished(root):
     helper=Path(root)/'src/abl1_workstation/reference_bundle.py'
     if helper.is_file():
         print('Klargjør medfølgende hg19 chr9-referanse …',flush=True)
-        prepared=runpy.run_path(str(helper))['bundled_reference'](root)
+        # Match the existing AppLocalDataLocation used by the desktop entry
+        # point. A read-only shared checkout must not fail after pip succeeded.
+        local=Path(os.environ.get('LOCALAPPDATA') or Path.home()/'AppData/Local').resolve()
+        prepared=runpy.run_path(str(helper))['bundled_reference'](root,local/'ABL1Dragon/ABL1Dragon')
         if prepared:print('chr9 FASTA og indeks er klare. Ingen referansenedlasting kreves.',flush=True)
     print('\n'+'='*48)
     print('DRAGEN ER FERDIG INSTALLERT')

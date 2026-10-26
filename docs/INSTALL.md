@@ -18,7 +18,8 @@ installasjon allerede finnes. Ved feil vises ingen ferdigmelding.
 
 Hele hg19 chr9-referansen og `.fai` følger kildekoden. Installasjonen pakker FASTA
 ut i `reference/hg19`; appen velger den automatisk. Ingen separat nedlasting av
-referanse eller IGV.js er nødvendig. Ved første start kontrolleres og eventuelt
+referanse eller IGV.js er nødvendig. Dersom fellesmappen bare kan leses, pakkes
+referansen ut i brukerens lokale appdata. Ved første start kontrolleres og eventuelt
 repareres den lokale referansekopien fra den medfølgende pakken.
 
 På Windows bruker IGV eksisterende **Microsoft Edge (`msedge.exe`)** i et eget

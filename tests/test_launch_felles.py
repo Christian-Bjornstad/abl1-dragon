@@ -79,6 +79,12 @@ class FellesTests(unittest.TestCase):
         result=self.invoke(code)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
+    def test_reference_preparation_has_user_local_fallback_for_read_only_shared_sources(self):
+        helper=self.root/'src/abl1_workstation/reference_bundle.py'
+        helper.write_text("from pathlib import Path\nimport os\ndef bundled_reference(root,state_folder=None):\n if state_folder is None:raise PermissionError('Shared source is read only')\n state_folder=Path(state_folder)\n assert state_folder.is_relative_to(Path(os.environ['LOCALAPPDATA']).resolve())\n assert not state_folder.is_relative_to(Path(root)/'reference')\n return state_folder/'reference/hg19/chr9.fa'\n")
+        result=self.invoke("f['_installation_finished'](root)")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
     def test_missing_packages_does_not_fall_back_to_global_qt(self):
         result=self.invoke("f['package_dir'](root).mkdir(parents=True)\nf['activate'](root)")
         self.assertNotEqual(result.returncode,0);self.assertIn('Mangler lokale',result.stderr)
