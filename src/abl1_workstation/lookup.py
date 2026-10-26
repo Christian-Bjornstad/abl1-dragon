@@ -152,6 +152,17 @@ class LookupService:
 
     def _browser(self,provider,v,settings,adapter):
         if adapter is None:return self._result(provider,canonical_identity(v),'unsupported','Nettleseroppslag er ikke tilgjengelig i dette miljøet.')
+        if provider=='cosmic':
+            settings={k:value for k,value in settings.items() if k!='cosmic_mutation_id'}
+            try:
+                resolved=self._cosmic(v,{},settings)
+                if resolved.get('status')=='found' and resolved.get('identity_verified'):
+                    records=resolved.get('details',{}).get('records',[])
+                    ids=[re.fullmatch(r'(?:COSM)?([0-9]+)',str(r.get('MutationID') or '')) for r in records]
+                    numeric=next((match[1] for match in ids if match),None)
+                    if numeric:settings['cosmic_mutation_id']=numeric
+            except HTTPError as error:error.close()
+            except (OSError,ValueError,TypeError,KeyError):pass
         data=adapter.lookup(provider,v,settings=settings)
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)

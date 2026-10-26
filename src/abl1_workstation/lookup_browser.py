@@ -831,7 +831,10 @@ class PortalBrowser:
                 v=canonical_identity(variant)
                 url=f"https://franklin.genoox.com/clinical-db/variant/snp/chr{v['chrom']}-{v['pos']}-{v['ref']}-{v['alt']}"
             elif provider=='oncokb':url='https://www.oncokb.org/hgvsg/'+quote(genomic_hgvs(variant),safe=':>')+'?refGenome=GRCh37'
-            else:url='https://cancer.sanger.ac.uk/cosmic/search?q='+quote('ABL1 '+str(variant.get('cdna','')))
+            else:
+                mutation_id=str(settings.get('cosmic_mutation_id') or '')
+                url=('https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id='+mutation_id if re.fullmatch(r'[0-9]+',mutation_id)
+                     else 'https://grch37-cancer.sanger.ac.uk/cosmic/search?q='+quote('ABL1 '+str(variant.get('cdna',''))))
             context.navigate(url)
             timeout=min(max(float(settings.get('browser_timeout_seconds',30)),5),90)
             deadline=time.monotonic()+timeout;result=None;login_attempted=False;query_retried=False
