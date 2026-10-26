@@ -20,6 +20,7 @@ patient-data/
 inputs/
 analyses/
 reports/
+evidence/
 *.sqlite*
 *.db
 *.abl1.json

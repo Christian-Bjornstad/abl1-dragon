@@ -1,4 +1,4 @@
-import os,sys,tempfile,time,unittest
+import os,sys,tempfile,time,unittest,threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -54,5 +54,28 @@ class BatchWorkflowTests(unittest.TestCase):
         w=self.window;w.mark_visible();path=self.folder/'cancelled.xlsx'
         w.start_export(path);w.cancel_export();self.app.processEvents()
         self.assertFalse(path.exists());self.assertIsNone(w._export);self.assertFalse(w.loading)
+
+    def test_first_source_is_visible_and_saved_while_next_source_is_still_running(self):
+        from abl1_workstation.lookup import canonical_identity
+        from abl1_workstation.evidence_store import EvidenceStore
+        w=self.window;w.mark_visible();release=threading.Event();started=threading.Event()
+        variant=w.variant_model.selected_rows()[0]
+        def lookup(v,providers,**options):
+            item={'provider':'clinvar','status':'found','summary':'Synthetic persisted evidence',
+                  'identity':canonical_identity(v),'identity_verified':True}
+            options['completed'](item);started.set();release.wait(4)
+            return [item]
+        try:
+            with patch('abl1_workstation.lookup.LookupService.lookup',side_effect=lookup):
+                w.lookup_selected();self.assertTrue(started.wait(2))
+                deadline=time.monotonic()+2
+                while not w.lookup_results and time.monotonic()<deadline:self.app.processEvents();time.sleep(.005)
+                self.assertTrue(w.loading)
+                self.assertEqual(w.lookup_results[allele_key(variant)][0]['summary'],'Synthetic persisted evidence')
+                self.assertEqual(EvidenceStore(self.folder).load(variant)[0]['provider'],'clinvar')
+                release.set();self.finish()
+            w._apply_session(load_pilot())
+            self.assertEqual(w.lookup_results[allele_key(variant)][0]['summary'],'Synthetic persisted evidence')
+        finally:release.set();self.finish()
 
 if __name__=='__main__':unittest.main()

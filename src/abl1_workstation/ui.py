@@ -21,9 +21,10 @@ from .ui_common import STYLE,label,button,initial_window_geometry
 class Task(QObject):
     finished=pyqtSignal(object)
     failed=pyqtSignal(str)
-    def __init__(self,operation):super().__init__();self.operation=operation
+    progress=pyqtSignal(object)
+    def __init__(self,operation,*,stream=False):super().__init__();self.operation=operation;self.stream=stream
     def run(self):
-        try:self.finished.emit(self.operation())
+        try:self.finished.emit(self.operation(self.progress.emit) if self.stream else self.operation())
         except Exception as error:self.failed.emit(str(error))
 
 
@@ -169,6 +170,13 @@ class MainWindow(QMainWindow):
 
     def _apply_session(self,session,files=None):
         self.read_viewer.clear();self.current_variant=None;self.run_files=files;self.lookup_results={};self.session=session
+        from .evidence_store import EvidenceStore
+        evidence=EvidenceStore(self.store.path.parent)
+        for variant in session.data['variants']:
+            key=allele_key(variant)
+            if key not in self.lookup_results:
+                restored=evidence.load(variant)
+                if restored:self.lookup_results[key]=restored
         self.navigate(0);self.event_log.clear()
         self.log_event(f"Analyse lastet: {len(session.data['samples'])} prøver, {len(session.data['variants'])} VCF-kall.")
         self.variant_model.replace(session.data['variants'])
@@ -245,26 +253,37 @@ class MainWindow(QMainWindow):
         rows={allele_key(v):dict(v) for v in self.variant_model.selected_rows()};providers=tuple(self.settings.providers)
         if not rows:return
         modes={p:'browser' for p in ('franklin','oncokb','cosmic','mtbp')}
-        def operation():
-            results=[]
+        def operation(emit):
+            from .evidence_store import EvidenceStore
+            receipts=EvidenceStore(self.store.path.parent)
             service=LookupService(self.store.path.parent,browser_adapter=self.database_browser)
             for key,v in rows.items():
-                found=service.lookup(v,providers,settings={'provider_modes':modes})
-                if self.browser_enabled and hasattr(self.database_browser,'capture_result'):
-                    found=[self.database_browser.capture_result(item['provider'],v,item) for item in found]
-                results.append((key,found))
-            return results
-        def finished(results):
-            for result in results:self._lookup_finished(result)
-        self._start_task(operation,finished,f'Søker i databaser: {len(rows)} merkede alleler …')
+                delivered=set()
+                def completed(item):
+                    if self.browser_enabled and hasattr(self.database_browser,'capture_result'):
+                        item=self.database_browser.capture_result(item['provider'],v,item)
+                    # Legacy adapters may omit identity on errors. Never infer
+                    # identity for a successful result at this boundary.
+                    if item.get('identity'):
+                        try:receipts.save(v,item)
+                        except OSError:item={**item,'persistence_error':'Databaseresultatet kunne ikke lagres lokalt.'}
+                    emit((key,[item]));delivered.add(item['provider'])
+                found=service.lookup(v,providers,settings={'provider_modes':modes},completed=completed)
+                for item in found:
+                    if item['provider'] not in delivered:completed(item)
+        self._start_task(operation,lambda _:None,f'Søker i databaser: {len(rows)} merkede alleler …',progress_callback=self._lookup_finished)
 
     def _lookup_finished(self,result):
-        key,results=result;self.lookup_results[key]=results;self._render_sources()
+        key,results=result
+        merged={item['provider']:item for item in self.lookup_results.get(key,[])}
+        merged.update({item['provider']:item for item in results})
+        self.lookup_results[key]=list(merged.values());self._render_sources()
         for item in results:
             state={'found':'treff','not_found':'ingen treff','login_required':'innlogging kreves','license_required':'tilgang kreves','unsupported':'ikke tilgjengelig','error':'feil'}.get(item.get('status'),'ukjent status')
             self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+': '+state+'.')
             if item.get('screenshot_error'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde: '+str(item['screenshot_error']))
             elif item.get('screenshot'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde lagret.')
+            if item.get('persistence_error'):self.log_event(item['persistence_error'])
         self._update_actions()
 
     def retry_database_images(self):
@@ -273,8 +292,13 @@ class MainWindow(QMainWindow):
         results=[dict(item) for item in self.lookup_results.get(key,[])]
         if not results:return
         def operation():
-            return key,[self.database_browser.recapture_result(item['provider'],variant,item)
-                        if item.get('status') in ('found','login_required','error') else item for item in results]
+            from .evidence_store import EvidenceStore
+            receipts=EvidenceStore(self.store.path.parent);updated=[]
+            for item in results:
+                current=self.database_browser.recapture_result(item['provider'],variant,item) if item.get('status') in ('found','login_required','error') else item
+                if current.get('identity'):receipts.save(variant,current)
+                updated.append(current)
+            return key,updated
         self._start_task(operation,self._lookup_finished,'Henter bilder fra åpne databasesider for '+str(variant.get('protein_snv_alone') or variant['pos'])+' …')
 
     def _render_sources(self):
@@ -355,11 +379,12 @@ class MainWindow(QMainWindow):
         elif time.monotonic()>self._capture_deadline or (viewer._pending is None and viewer.current_alignment is None) or viewer.web_view and viewer.web_view.title().startswith('ABL1_IGV_ERROR'):
             self.capture_timer.stop();complete(None,viewer.status_label.text())
 
-    def _start_task(self,operation,callback,message):
+    def _start_task(self,operation,callback,message,*,progress_callback=None):
         if self.thread is not None:return
         self.log_event(message)
         self.loading=True;self.progress.show();self._update_actions();self.statusBar().showMessage(message)
-        self.thread=QThread(self);self.worker=Task(operation);self.worker.moveToThread(self.thread)
+        self.thread=QThread(self);self.worker=Task(operation,stream=progress_callback is not None);self.worker.moveToThread(self.thread)
+        if progress_callback:self.worker.progress.connect(progress_callback)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(callback);self.worker.failed.connect(self._error)
         self.worker.finished.connect(self.thread.quit);self.worker.failed.connect(self.thread.quit)

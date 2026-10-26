@@ -115,7 +115,7 @@ class LookupService:
                 'accession':'','url':HOMES.get(provider,''),'checked_at':datetime.now(timezone.utc).isoformat(),
                 'variant_key':variant_key(identity) if identity else '', 'identity':identity,**details}
 
-    def lookup(self,variant,providers=('clinvar','gnomad'),*,tokens=None,settings=None,progress=None,browser_adapter=None):
+    def lookup(self,variant,providers=('clinvar','gnomad'),*,tokens=None,settings=None,progress=None,browser_adapter=None,completed=None):
         """Fetch only the selected public allele; tokens live in this call only.
 
         Optional portal adapter contract: .lookup(provider, sanitized_variant,
@@ -147,6 +147,7 @@ class LookupService:
             except RuntimeError:result=self._result(provider,identity,'error','Portalvinduet kunne ikke brukes. Åpne kilden på nytt under Innstillinger.')
             except (ValueError,TypeError,KeyError,ET.ParseError):result=self._result(provider,identity,'error','Databasesvaret kunne ikke valideres. Ingen klassifikasjon ble brukt.')
             results.append(result)
+            if completed:completed(result)
         return results
 
     def _browser(self,provider,v,settings,adapter):
@@ -155,7 +156,7 @@ class LookupService:
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)
         if data['status']=='found' and canonical_identity(data.get('identity') or {})!=identity:raise ValueError('Nettlesertreffets allel er ikke kontrollert.')
-        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshot_error','screenshot_reason'}
+        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshots','captured_at','screenshot_error','screenshot_reason'}
         return self._result(provider,identity,data['status'],str(data.get('summary','')),**{k:value for k,value in data.items() if k in allowed and k!='summary'})
 
     def _clinvar(self,v,tokens,settings):
