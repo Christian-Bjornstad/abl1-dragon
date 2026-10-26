@@ -1,7 +1,7 @@
 """Single-sheet result export with original caller fields and source status."""
 from datetime import datetime
 from pathlib import Path
-from . import __version__
+from . import APP_NAME, __version__
 from .models import flags
 from .workflow import allele_key,category
 
@@ -36,7 +36,7 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnoma
     from openpyxl.worksheet.table import Table,TableStyleInfo
     from openpyxl.comments import Comment
     book=Workbook();sheet=book.active;sheet.title='Resultater'
-    sheet.append(['ABL1 Dragon',__version__,'GRCh37 / NM_005157.6',datetime.now().isoformat(timespec='minutes')])
+    sheet.append([APP_NAME,__version__,'GRCh37 / NM_005157.6',datetime.now().isoformat(timespec='minutes')])
     sheet.append(['Analyse',safe_text(session.source_label or session.run_id[:12]),'Utvalg',safe_text(selection)])
     headers=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein (enkeltallel)','FILTER','Kategori',
              'AF (%)','ALT / DP']+[PROVIDER_NAMES.get(p,p) for p in providers]
@@ -55,13 +55,13 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnoma
             values=[v['sample'],'','','','','','Ingen varianter i utvalget',None,'']+['–']*len(providers)
         sheet.append([safe_text(x) for x in values])
         notes=flags(v)
-        if notes:sheet.cell(sheet.max_row,5).comment=Comment(safe_text('; '.join(notes)),'ABL1 Dragon')
+        if notes:sheet.cell(sheet.max_row,5).comment=Comment(safe_text('; '.join(notes)),APP_NAME)
         for col,provider in enumerate(providers,10):
             result=sources.get(provider)
             if result:
                 # Keep provenance in the cell without widening the report.
                 provenance='\n'.join(str(result.get(k) or '') for k in ('provider','checked_at','accession','url'))
-                sheet.cell(sheet.max_row,col).comment=Comment(safe_text(provenance),'ABL1 Dragon')
+                sheet.cell(sheet.max_row,col).comment=Comment(safe_text(provenance),APP_NAME)
     sheet.freeze_panes='D4';sheet.sheet_view.showGridLines=False
     for cell in sheet[1]:cell.font=Font(bold=True,color='7150A1')
     for cell in sheet[3]:

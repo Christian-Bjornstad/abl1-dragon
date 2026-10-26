@@ -6,8 +6,7 @@ QMainWindow, QWidget#AppRoot, QWidget#ContentShell {background:#F4F3F6;color:#29
 QDialog {background:#F4F3F6;color:#292633;}
 QWidget {font-family:"Segoe UI";font-size:10pt;color:#292633;}
 QFrame#NavigationRail {background:#292333;border:0;}
-QLabel#Brand {color:white;font-size:24pt;font-weight:700;background:transparent;}
-QLabel#BrandSubtitle {color:#D9CDE9;font-size:13pt;font-weight:600;background:transparent;}
+QLabel#Brand {color:white;font-size:20pt;font-weight:700;background:transparent;}
 QLabel#BrandMark {background:transparent;}
 QLabel#RailSubtitle {color:#CDC4D8;font-size:9pt;background:transparent;}
 QLabel#PilotState {color:#EAE3F2;background:#3B3149;border:1px solid #554662;border-radius:5px;padding:9px;font-size:9pt;}

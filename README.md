@@ -1,4 +1,4 @@
-# ABL1 Dragon
+# DRAGEN
 
 Python-app for gjennomgang av BCR::ABL1-varianter fra DRAGEN amplicon.
 Mappeimport, variantliste, lokal IGV, databaseoppslag og én Excel-fane.

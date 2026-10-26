@@ -1,6 +1,6 @@
 # Lisenser og ressurser
 
-ABL1 Dragon er distribuert under GPL-3.0. Se [LICENSE](../LICENSE).
+DRAGEN er distribuert under GPL-3.0. Se [LICENSE](../LICENSE).
 
 PyQt6 og PyQt-WebEngine bruker GPLv3 eller kommersiell lisens.
 Qt-bibliotekenes egne lisenser følger deres distribusjon.

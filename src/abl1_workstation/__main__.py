@@ -5,11 +5,11 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
-from . import __version__
+from . import APP_NAME, __version__
 
 
 def main(argv=None):
-    parser=argparse.ArgumentParser(description='ABL1 Dragon')
+    parser=argparse.ArgumentParser(description=APP_NAME)
     parser.add_argument('--project',type=Path,help='Åpne lokalt lagret prosjekt eller analyse-JSON')
     parser.add_argument('--data-dir',type=Path,help='Valgfri godkjent mappe for arbeidsdatabasen')
     parser.add_argument('--smoke-test',type=Path,help='Kjør native selvtest uten WebEngine og lagre kvittering')
@@ -31,8 +31,9 @@ def main(argv=None):
             font=font_dir/name
             if font.is_file():QFontDatabase.addApplicationFont(str(font))
     app.setFont(QFont('Segoe UI',10))
+    # Retain the storage identity so existing settings and browser profiles are reused.
     app.setOrganizationName('ABL1Dragon');app.setApplicationName('ABL1Dragon');app.setApplicationVersion(__version__)
-    app.setApplicationDisplayName('ABL1 Dragon')
+    app.setApplicationDisplayName(APP_NAME)
     from .domain import ReviewStore, load_inputs, load_pilot, resource_root, save_project
     from .report import export_report
     icon=resource_root()/'assets/brand/abl1-dragon.ico'
@@ -50,7 +51,7 @@ def main(argv=None):
         webengine=bool(importlib.util.find_spec('PyQt6.QtWebEngineWidgets'))
         if webengine:
             from PyQt6 import QtWebEngineWidgets  # verify frozen runtime import, no page or browser created
-        proof={'application':'ABL1 Dragon','version':__version__,'qt_runtime':qVersion(),
+        proof={'application':APP_NAME,'version':__version__,'qt_runtime':qVersion(),
                'frozen':bool(getattr(sys,'frozen',False)),'samples':len(window.session.data['samples']),
                'variants':len(window.session.data['variants']),'qc_rows':len(window.session.data.get('qc',[])),
                'phase_rows':len(window.session.data.get('phase_rows',[])),

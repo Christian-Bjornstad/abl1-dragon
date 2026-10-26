@@ -151,7 +151,7 @@ def check(root=ROOT):
             'install_blockers':install_blockers,'start_blockers':start_blockers,
             'dependency_imports_tested':False,'gui_started':False,'network_used':False}
     _write_report(root,report)
-    print('ABL1 Dragon · FELLES-kontroll')
+    print('DRAGEN · FELLES-kontroll')
     print('Python '+'.'.join(map(str,runtime['python_version']))+' · '+str(runtime['architecture_bits'])+' bit · '+runtime['platform_tag'])
     print('Installasjon: '+('klar' if report['ready_for_install'] else 'ikke klar'))
     print('Oppstart: '+('klar' if report['ready_for_start'] else 'ikke klar'))

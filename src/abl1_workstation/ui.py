@@ -6,6 +6,7 @@ from PyQt6.QtGui import QCursor,QIcon,QPixmap
 from PyQt6.QtWidgets import (QAbstractItemView,QApplication,QComboBox,QFileDialog,QHBoxLayout,QFrame,QGridLayout,QStackedWidget,
     QHeaderView,QLabel,QLayout,QMainWindow,QMessageBox,QPlainTextEdit,QProgressBar,QScrollArea,QSplitter,
     QTableView,QVBoxLayout,QWidget)
+from . import APP_NAME
 from .domain import ReviewStore,load_inputs,resource_root
 from .models import VariantModel,VariantFilter
 from .workflow import allele_key
@@ -32,7 +33,7 @@ class MainWindow(QMainWindow):
         self.browser_enabled=browser_enabled;self.loading=False
         self.settings=Settings(store.path.parent)
         self.database_browser=database_browser or PortalBrowser(store.path.parent,edge_browser=EdgeBrowser(store.path.parent))
-        self.setWindowTitle('ABL1 Dragon');self.setWindowIcon(QIcon(str(resource_root()/'assets/brand/abl1-dragon.ico')))
+        self.setWindowTitle(APP_NAME);self.setWindowIcon(QIcon(str(resource_root()/'assets/brand/abl1-dragon.ico')))
         self._startup_screen=QApplication.screenAt(QCursor.pos()) or self.screen() or QApplication.primaryScreen()
         self._initial_geometry_pending=True;self._build_ui();self.setStyleSheet(STYLE)
         if session:self._apply_session(session)
@@ -60,8 +61,8 @@ class MainWindow(QMainWindow):
         rail=QFrame();rail.setObjectName('NavigationRail');rail.setFixedWidth(180)
         nav=QVBoxLayout(rail);nav.setContentsMargins(14,24,14,18);nav.setSpacing(10)
         mark=label('','BrandMark');mark.setPixmap(QPixmap(str(resource_root()/'assets/brand/abl1-dragon.png')).scaled(68,68,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
-        brand_title=label('ABL1','Brand');brand_subtitle=label('Dragon','BrandSubtitle')
-        for item in (mark,brand_title,brand_subtitle):
+        brand_title=label(APP_NAME,'Brand')
+        for item in (mark,brand_title):
             item.setAlignment(Qt.AlignmentFlag.AlignCenter);nav.addWidget(item)
         nav.addSpacing(24)
         self.analysis_button=button('Analyse',lambda:self.navigate(0));self.igv_button=button('IGV',lambda:self.navigate(1))
@@ -287,7 +288,7 @@ class MainWindow(QMainWindow):
 
     def _error(self,message):
         self.log_event(message)
-        self.statusBar().showMessage(message);QMessageBox.warning(self,'ABL1 Dragon',message)
+        self.statusBar().showMessage(message);QMessageBox.warning(self,APP_NAME,message)
 
     def closeEvent(self,event):
         if self.thread is not None or self.settings_panel.busy:
