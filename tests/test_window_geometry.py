@@ -54,7 +54,7 @@ class WindowGeometryTests(unittest.TestCase):
             window=ui.MainWindow(ReviewStore(Path(folder)/'reviews.sqlite'),browser_enabled=False)
             try:
                 window.show();self.app.processEvents()
-                scroll=window.centralWidget()
+                scroll=window.centralWidget().findChild(QScrollArea)
                 self.assertIsInstance(scroll,QScrollArea)
                 window.resize(760,640);self.app.processEvents()
                 # Both ends of a wider native workspace remain reachable.
@@ -65,8 +65,10 @@ class WindowGeometryTests(unittest.TestCase):
                 self.assertTrue(scroll.viewport().rect().contains(button_point))
                 scroll.horizontalScrollBar().setValue(0);self.app.processEvents()
                 first_nav=window.analysis_button
-                nav_point=first_nav.mapTo(scroll.viewport(),first_nav.rect().center())
-                self.assertTrue(scroll.viewport().rect().contains(nav_point))
+                nav_point=first_nav.mapTo(window.centralWidget(),first_nav.rect().center())
+                self.assertTrue(window.centralWidget().rect().contains(nav_point))
+                footer=window.excel_button.mapTo(window.centralWidget(),window.excel_button.rect().bottomRight())
+                self.assertTrue(window.centralWidget().rect().contains(footer))
             finally:window.close();self.app.processEvents()
 
 
