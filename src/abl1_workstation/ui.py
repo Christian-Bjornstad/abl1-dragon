@@ -314,7 +314,8 @@ class MainWindow(QMainWindow):
         for i,provider in enumerate(self.settings.providers):
             result=by_provider.get(provider,{})
             state=states.get(result.get('status'),'Ikke søkt')
-            if result.get('status')=='found':state+=' · bilde klart' if result.get('screenshot') else ' · bilde mangler'
+            if result.get('status')=='found':
+                state+=(' · delvis bilder' if result.get('screenshot_error') else ' · bilde klart') if result.get('screenshot') else ' · bilde mangler'
             badge=label(PROVIDER_NAMES.get(provider,provider)+' · '+state,'SourceBadge')
             badge.setToolTip(('Kontrollert: '+str(result.get('checked_at',''))+'\n'+str(result.get('screenshot_error') or result.get('summary') or '')).strip() if result else '')
             badge.setProperty('found',result.get('status')=='found')

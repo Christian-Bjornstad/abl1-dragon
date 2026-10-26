@@ -73,7 +73,7 @@ def card_view(context,selector,index):
       const old=document.getElementById('dragen-evidence-capture');if(old)old.remove();
       const wrapper=document.createElement('div');wrapper.id='dragen-evidence-capture';
       const rect=node.getBoundingClientRect();
-      Object.assign(wrapper.style,{position:'absolute',left:'0px',top:`${scrollY}px`,width:`${Math.ceil(rect.width)}px`,height:'auto',overflow:'visible',background:'white',zIndex:'2147483647',pointerEvents:'none'});
+      Object.assign(wrapper.style,{position:'absolute',left:'0px',top:`${scrollY}px`,width:`${Math.ceil(rect.width)}px`,height:'auto',minHeight:'84px',padding:'16px',boxSizing:'border-box',overflow:'visible',background:'white',zIndex:'2147483647',pointerEvents:'none'});
       const clone=node.cloneNode(true);
       Object.assign(clone.style,{display:'block',width:'100%',height:'auto',maxHeight:'none',overflow:'visible',margin:'0'});
       wrapper.appendChild(clone);document.body.appendChild(wrapper);

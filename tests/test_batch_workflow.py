@@ -78,4 +78,10 @@ class BatchWorkflowTests(unittest.TestCase):
             self.assertEqual(w.lookup_results[allele_key(variant)][0]['summary'],'Synthetic persisted evidence')
         finally:release.set();self.finish()
 
+    def test_partial_capture_is_visible_as_partial_even_when_one_picture_is_available(self):
+        w=self.window;variant=w.current_variant
+        w._lookup_finished((allele_key(variant),[{'provider':'clinvar','status':'found','screenshot':'synthetic.png','screenshot_error':'A second view is missing'}]))
+        self.assertIn('delvis',w.source_badges['clinvar'].text().lower())
+        self.assertNotIn('bilde klart',w.source_badges['clinvar'].text().lower())
+
 if __name__=='__main__':unittest.main()
