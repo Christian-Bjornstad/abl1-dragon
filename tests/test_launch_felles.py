@@ -19,7 +19,7 @@ class FellesTests(unittest.TestCase):
         (self.root/'src/abl1_workstation').mkdir(parents=True)
     def tearDown(self):self.tmp.cleanup()
     def invoke(self,body):
-        code="import json,runpy,sys\nfrom pathlib import Path\nroot=Path(sys.argv[1])\nf=runpy.run_path(str(root/'packaging/felles.py'))\n"+body
+        code="import json,runpy,sys,os\nfrom pathlib import Path\nroot=Path(sys.argv[1])\nos.environ['LOCALAPPDATA']=str(root/'user-local')\nf=runpy.run_path(str(root/'packaging/felles.py'))\n"+body
         return subprocess.run([sys.executable,'-I','-c',code,str(self.root)],capture_output=True,encoding='utf-8',errors='replace',timeout=30)
     def diagnostic_fixture(self):
         (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n',encoding='utf-8')
@@ -35,6 +35,23 @@ class FellesTests(unittest.TestCase):
         result=self.invoke("f['install'](root,offline=True)")
         self.assertNotEqual(result.returncode,0);self.assertIn('wheelhouse',result.stderr)
         self.assertFalse((self.root/'.felles-packages').exists())
+    def test_shared_source_packages_are_never_used_or_renamed_and_each_user_installs_locally(self):
+        (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
+        code=("shared=root/'.felles-packages'/('cp'+str(sys.version_info.major)+str(sys.version_info.minor)+'-amd64');shared.mkdir(parents=True)\n"
+              "(shared/'locked.txt').write_text('another user is running this')\n"
+              "from unittest.mock import patch\n"
+              "def fake_pip(args):\n"
+              " target=Path(args[args.index('--target')+1]);dist=target/'pip-test.dist-info';dist.mkdir()\n"
+              " (dist/'METADATA').write_text('Name: pip\\nVersion: "+ensurepip.version()+"\\n')\n"
+              " return 0\n"
+              "with patch.object(Path,'rename',side_effect=PermissionError(5,'access denied')):\n"
+              " assert f['install'](root,pip_main=fake_pip)==0\n"
+              "selected=f['package_dir'](root)\nassert selected.is_relative_to(root/'user-local')\n"
+              "assert (shared/'locked.txt').read_text()=='another user is running this'\n"
+              "os.environ['LOCALAPPDATA']=str(root/'second-user')\n"
+              "assert f['package_dir'](root)!=selected\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
     def test_github_source_without_wheelhouse_installs_online_in_same_interpreter(self):
         (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
         code=("calls=[]\n"
@@ -71,7 +88,7 @@ class FellesTests(unittest.TestCase):
         self.assertNotEqual(result.returncode,0);self.assertIn('Pakkeinstallasjonen feilet',result.stderr)
         self.assertNotIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
         self.assertIn('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT',result.stdout)
-        self.assertEqual(next((self.root/'.felles-packages').rglob('bevar.txt')).read_text(),'bevar')
+        self.assertEqual(next((self.root/'user-local').rglob('bevar.txt')).read_text(),'bevar')
     def test_repair_preserves_old_packages_and_ignores_an_abandoned_install_folder(self):
         (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
         code=("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\n"
@@ -81,8 +98,8 @@ class FellesTests(unittest.TestCase):
               " (dist/'METADATA').write_text('Name: pip\\nVersion: "+ensurepip.version()+"\\n')\n"
               " return 0\n"
               "assert f['install'](root,pip_main=fake_pip)==0\n"
-              "assert not (t/'bevar.txt').exists()\n"
-              "assert list(t.parent.glob(t.name+'.previous-*/bevar.txt'))[0].read_text()=='bevar'\n"
+              "assert (t/'bevar.txt').read_text()=='bevar'\n"
+              "assert f['package_dir'](root)!=t\nassert not (f['package_dir'](root)/'bevar.txt').exists()\n"
               "assert (stale/'old.txt').read_text()=='keep'\n")
         result=self.invoke(code)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -131,9 +148,21 @@ class FellesTests(unittest.TestCase):
     def test_partial_install_is_reported_and_preserved(self):
         self.diagnostic_fixture()
         report=self.check_result("p=f['package_dir'](root).with_name(f['package_dir'](root).name+'.installing')\np.mkdir(parents=True)\n(p/'bevar.txt').write_text('bevar')\n")
-        self.assertFalse(report['ready_for_install'])
+        self.assertTrue(report['ready_for_install'])
         self.assertTrue(report['partial_install_exists'])
-        self.assertEqual(next((self.root/'.felles-packages').rglob('bevar.txt')).read_text(),'bevar')
+        self.assertEqual(next((self.root/'user-local').rglob('bevar.txt')).read_text(),'bevar')
+
+    def test_failed_repair_keeps_active_generation_and_requirement_changes_use_a_new_slot(self):
+        (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
+        code=("slot=f['_package_slot'](root);slot.mkdir(parents=True)\n"
+              "old=slot/('packages-'+'a'*32);old.mkdir()\n(old/'keep.txt').write_text('running app')\n"
+              "f['_select_packages'](slot,old)\n"
+              "try:f['install'](root,pip_main=lambda args:7)\nexcept RuntimeError:pass\n"
+              "assert f['package_dir'](root)==old\nassert (old/'keep.txt').read_text()=='running app'\n"
+              "(root/'requirements-desktop.txt').write_text('pip==0.0.0\\n')\n"
+              "assert f['_package_slot'](root)!=slot\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_free_threaded_python_is_not_reported_ready_for_regular_cpython_wheels(self):
         self.diagnostic_fixture()

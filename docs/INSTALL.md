@@ -53,13 +53,17 @@ En innlimt FELLES-kommando videresender ikke Python-vertens egne argumenter.
 
 Python 3.12–3.14, Windows 64 bit støttes. PRONTO/FELLES-flyten bruker Python 3.14.
 Installasjonen kjører pip i samme interpreter, uten en underordnet `python.exe`.
-Pakkene legges i appens egen `.felles-packages`, ikke i FELLES-brukerens delte pakker.
+Pakkene legges under `%LOCALAPPDATA%\DRAGEN\python-packages`, separat for hver
+Windows-bruker, Python-versjon og pakkeversjon. Kildekoden kan ligge på fellesområdet.
+Gamle `.felles-packages` i programmappen brukes eller endres ikke.
 NumPy og pandas installeres ikke av DRAGEN. Dette bevarer isolasjonen fra HemaFrag.
 
 Hvis `wheelhouse` følger mappen, brukes den automatisk uten nett. Lokal installasjon kan
 styres med `INSTALL_DRAGEN.cmd --offline` eller `--online`. Vanlig oppstart installerer ingenting.
-En ufullstendig eller eldre pakkemappe erstattes først etter at nye pakker er installert
-og kontrollert. Den gamle mappen beholdes under `.felles-packages` med suffikset `.previous-...`.
+En reparasjon lager en ny lokal pakkemappe. Appen bytter til den først etter at
+alle versjoner er kontrollert; tidligere pakker beholdes urørt. Dermed trenger
+installasjonen ikke å flytte en mappe som en kollega eller en annen appprosess bruker.
+Hver bruker kjører **INSTALL_DRAGEN.cmd** én gang før sin første oppstart.
 
 Feil vises i konsollen med loggbane. FELLES-loggen ligger normalt i
 `work/launcher-logs/felles.log`; hvis mappen ikke er skrivbar brukes en lokal reservemappe.

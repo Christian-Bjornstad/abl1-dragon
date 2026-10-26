@@ -1,6 +1,7 @@
 """Python FELLES entrypoints: same-interpreter install/start, app-local packages."""
 from __future__ import annotations
 import importlib
+import hashlib
 from importlib import metadata
 import json
 import os
@@ -11,6 +12,7 @@ import sys
 import sysconfig
 import tempfile
 import traceback
+import uuid
 from datetime import datetime, timezone
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -144,6 +146,7 @@ def check(root=ROOT):
     pip_available=_pip_available()
     loaded_qt=sorted(name for name in sys.modules if name.startswith('PyQt6'))
     partial=target.with_name(target.name+'.installing').exists()
+    package_writable,package_write_error=_probe_writeability(_package_slot(root).parent)
     common=list(project_errors)
     if not runtime['windows_x64']:common.append('Offline-pakken krever Windows med 64-bit x64-Python.')
     if runtime['implementation']!='cpython':common.append('Bruk CPython 3.12–3.14.')
@@ -153,14 +156,19 @@ def check(root=ROOT):
     if metadata_error:start_blockers.append('Pakkemetadata kunne ikke leses: '+metadata_error)
     if missing:start_blockers.append('Mangler lokale pakker: '+', '.join(missing))
     install_blockers=list(common)
-    if not writable:install_blockers.append('Programmappen er ikke skrivbar: '+str(write_error))
+    # The source checkout can be a shared/read-only UNC folder. Dependencies
+    # always belong to this Windows user's local application cache.
+    if not package_writable:
+        try:
+            _package_slot(root).parent.mkdir(parents=True,exist_ok=True)
+            package_writable,package_write_error=_probe_writeability(_package_slot(root).parent)
+        except OSError as error:package_write_error=str(error)
+    if not package_writable:install_blockers.append('Lokal pakkemappe er ikke skrivbar: '+str(package_write_error))
     if not pip_available:install_blockers.append('pip mangler i Python FELLES. Bruk godkjent runtime med pip.')
     if not wheels.is_dir():install_blockers.append('Pakk ut hele offline-pakken med wheelhouse.')
     if wheel_error:install_blockers.append('Wheelhouse kunne ikke leses: '+wheel_error)
     if missing_wheels:install_blockers.append('Mangler kompatible wheels: '+', '.join(missing_wheels))
     if metadata_error:install_blockers.append('Pakkemetadata kunne ikke leses: '+metadata_error)
-    if partial:install_blockers.append('En tidligere .installing-mappe finnes. Bevar eller flytt den før nytt forsøk.')
-    if target.exists() and missing:install_blockers.append('Eksisterende pakkemappe er ufullstendig eller eldre. Bevar eller flytt den før ny installasjon.')
     report={'checked_at_utc':datetime.now(timezone.utc).isoformat(),'project':str(root),
             'application_version':project.get('version'),'requires_python':project.get('requires-python'),
             **runtime,'package_dir':str(target),'project_writable':writable,'write_error':write_error,
@@ -180,8 +188,36 @@ def check(root=ROOT):
     return report
 
 
+def _package_slot(root=ROOT):
+    local=Path(os.environ.get('LOCALAPPDATA') or Path.home()/'AppData/Local').resolve()
+    lock=(Path(root)/'requirements-desktop.txt').read_bytes()
+    digest=hashlib.sha256(lock).hexdigest()[:20]
+    runtime=f'cp{sys.version_info.major}{sys.version_info.minor}-{platform.machine().lower()}'
+    return local/'DRAGEN/python-packages'/runtime/digest
+
+
 def package_dir(root=ROOT):
-    return Path(root)/'.felles-packages'/f'cp{sys.version_info.major}{sys.version_info.minor}-{platform.machine().lower()}'
+    slot=_package_slot(root)
+    try:
+        marker=slot/'active.json'
+        if marker.stat().st_size>512:raise ValueError('Ugyldig pakkepeker.')
+        name=json.loads(marker.read_text(encoding='utf-8'))
+        import re
+        if not isinstance(name,str) or not re.fullmatch(r'packages-[0-9a-f]{32}',name):raise ValueError('Ugyldig pakkepeker.')
+        target=slot/name
+        if target.resolve().parent!=slot.resolve():raise ValueError('Ugyldig pakkemappe.')
+        return target
+    except FileNotFoundError:return slot/'packages'
+
+
+def _select_packages(slot,target):
+    if target.parent!=slot or target.resolve().parent!=slot.resolve():raise RuntimeError('Ugyldig lokal pakkemappe.')
+    descriptor,temporary=tempfile.mkstemp(prefix='.active-',suffix='.json',dir=slot)
+    try:
+        with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
+            json.dump(target.name,stream);stream.flush();os.fsync(stream.fileno())
+        os.replace(temporary,slot/'active.json')
+    finally:Path(temporary).unlink(missing_ok=True)
 
 
 def helpers(root):
@@ -220,6 +256,7 @@ def _installation_finished(root):
     print('\n'+'='*48)
     print('DRAGEN ER FERDIG INSTALLERT')
     print('Alle pakkeversjoner er kontrollert.')
+    print('Pakker for denne Windows-brukeren: '+str(package_dir(root)),flush=True)
     print('Lukk dette Python FELLES-vinduet.')
     print('Kjor START_DRAGEN.cmd for aa starte appen.')
     print('='*48+'\n',flush=True)
@@ -233,17 +270,18 @@ def install(root=ROOT,*,offline=None,pip_main=None):
     use_offline=wheels.is_dir() if offline is None else offline
     if use_offline and not wheels.is_dir():raise RuntimeError('Offline-installasjon krever wheelhouse. Kjør install.py uten --offline for GitHub-kildekode.')
     target=package_dir(root)
-    private_root=root/'.felles-packages'
-    if private_root.resolve()!=private_root or target.resolve()!=target:
-        raise RuntimeError('DRAGENs pakkemappe peker utenfor programmappen.')
-    # Build a complete replacement before moving any existing app-owned packages.
+    slot=_package_slot(root)
+    if target.resolve().parent!=slot.resolve():raise RuntimeError('Ugyldig lokal pakkemappe.')
+    # Never rename or overwrite packages which another process may have loaded.
+    # Old generations stay intact. Publish a new generation atomically only
+    # after pip and every pinned version have passed verification.
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
         if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
             _installation_finished(root);return 0
-        print('Reparerer DRAGENs lokale pakker; eksisterende mappe bevares som sikkerhetskopi.')
+        print('Reparerer lokale DRAGEN-pakker for denne brukeren. Eksisterende pakker beholdes.')
     target.parent.mkdir(parents=True,exist_ok=True)
-    temporary=Path(tempfile.mkdtemp(prefix=target.name+'.installing-',dir=target.parent))
+    temporary=target.parent/('packages-'+uuid.uuid4().hex);temporary.mkdir()
     args=['install','--isolated','--no-deps','--ignore-installed','--only-binary=:all:',
           '--no-user','--no-input','--disable-pip-version-check','--target',str(temporary),'-r',str(root/'requirements-desktop.txt')]
     if use_offline:args+=['--no-index','--find-links',str(wheels)]
@@ -260,14 +298,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(temporary)])}
         if not all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
             raise RuntimeError('Versjonskontroll feilet. Delvis mappe beholdes: '+str(temporary))
-        backup=None
-        if target.exists():
-            backup=target.with_name(target.name+'.previous-'+datetime.now().strftime('%Y%m%d%H%M%S%f'))
-            target.rename(backup)
-        try:temporary.rename(target)
-        except OSError:
-            if backup is not None and not target.exists():backup.rename(target)
-            raise
+        _select_packages(slot,temporary)
     except Exception:
         print('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT. Se feilen nedenfor.');raise
     _installation_finished(root)
