@@ -8,7 +8,7 @@ Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 1. Kjør **INSTALL_DRAGEN.cmd**. Python FELLES åpnes via Ivanti; lim inn med Ctrl+V og trykk Enter.
 2. Lukk FELLES etter installasjon. Kjør **START_DRAGEN.cmd** og lim inn i det nye FELLES-vinduet.
 
-På PC uten Ivanti bruker de samme filene lokal Python. Det er ingen egen kontrollfil. Feil og loggbane vises ved installasjon eller start.
+FELLES er standard. Manglende Ivanti vises som en feil; lokal Python krever eksplisitt `DRAGEN_LOCAL_PYTHON=1`. Det er ingen egen kontrollfil. Feil og loggbane vises ved installasjon eller start.
 
 ## Kontroller i appen
 

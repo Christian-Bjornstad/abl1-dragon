@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abl1-dragon"
-version = "0.6.1"
+version = "0.6.2"
 description = "BCR::ABL1 variant review for Windows"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]

@@ -14,6 +14,26 @@ import traceback
 from datetime import datetime, timezone
 
 ROOT=Path(__file__).resolve().parents[1]
+APP_MODULES=('PyQt6','PyQt6_sip','openpyxl','et_xmlfile','PIL','websocket')
+
+
+def _loaded_app_modules():
+    return sorted(name for name in sys.modules if any(name==prefix or name.startswith(prefix+'.') for prefix in APP_MODULES))
+
+
+def _isolated_paths(root,target):
+    """Keep the active interpreter's standard library, not shared/user packages."""
+    bases={Path(sys.base_prefix).resolve(),Path(sys.base_exec_prefix).resolve()}
+    standard=[]
+    for value in sys.path:
+        if not value:continue
+        path=Path(value).resolve()
+        if any(part.casefold() in ('site-packages','dist-packages') for part in path.parts):continue
+        if any(path.is_relative_to(base) for base in bases) and path not in standard:standard.append(path)
+    for key in ('stdlib','platstdlib'):
+        path=Path(sysconfig.get_path(key)).resolve()
+        if path not in standard:standard.append(path)
+    return [str(root/'src'),str(target),*[str(path) for path in standard]]
 
 
 def _runtime_info():
@@ -176,20 +196,25 @@ def requirements(root):
 def activate(root=ROOT):
     root=Path(root).resolve();project,required=requirements(root);target=package_dir(root)
     if not target.is_dir():raise RuntimeError('Kjør INSTALL_DRAGEN.cmd først.')
-    if any(name.startswith('PyQt6') for name in sys.modules):
-        raise RuntimeError('Qt er allerede lastet. Start et nytt Python FELLES-vindu før DRAGEN.')
+    loaded=_loaded_app_modules()
+    if loaded:
+        raise RuntimeError('Pakker er allerede lastet ('+', '.join(loaded[:5])+'). Start et nytt Python FELLES-vindu før DRAGEN.')
     installed={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
     missing=[r['name']+'=='+r['required'] for r in required if installed.get(r['name'].lower().replace('_','-'))!=r['required']]
     if missing:raise RuntimeError('Mangler lokale FELLES-pakker: '+', '.join(missing))
-    sys.path[:0]=[str(root/'src'),str(target)]
+    sys.path[:]=_isolated_paths(root,target)
     importlib.invalidate_caches()
+    for name in ('PyQt6','openpyxl','et_xmlfile','PIL','websocket'):
+        spec=importlib.util.find_spec(name)
+        if spec is None or not spec.origin or not Path(spec.origin).resolve().is_relative_to(target):
+            raise RuntimeError('Feil pakkekilde for '+name+'. Kjør INSTALL_DRAGEN.cmd i et nytt FELLES-vindu.')
     return project
 
 
 def install(root=ROOT):
     root=Path(root).resolve();project,required=requirements(root)
-    if any(name.startswith('PyQt6') for name in sys.modules):
-        raise RuntimeError('Lukk tidligere Qt-apper og bruk et nytt Python FELLES-vindu før installasjon.')
+    if _loaded_app_modules():
+        raise RuntimeError('Lukk tidligere apper og bruk et nytt Python FELLES-vindu før installasjon.')
     wheels=root/'wheelhouse'
     if not wheels.is_dir():raise RuntimeError('FELLES-installasjon krever medfølgende wheelhouse. Pakk ut hele offline-pakken.')
     target=package_dir(root)
@@ -201,7 +226,7 @@ def install(root=ROOT):
         raise RuntimeError('Ufullstendig/eldre FELLES-pakkemappe: '+str(target)+'. Bevar eller flytt denne før nytt forsøk.')
     temporary=target.with_name(target.name+'.installing')
     temporary.mkdir(parents=True,exist_ok=False)
-    args=['install','--isolated','--no-index','--find-links',str(wheels),'--only-binary=:all:',
+    args=['install','--isolated','--no-index','--no-deps','--ignore-installed','--find-links',str(wheels),'--only-binary=:all:',
           '--no-user','--no-input','--disable-pip-version-check','--target',str(temporary),'-r',str(root/'requirements-desktop.txt')]
     print('Installerer offline i appens egen FELLES-pakkemappe. Globale pakker endres ikke.')
     try:

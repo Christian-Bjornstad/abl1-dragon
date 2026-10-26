@@ -25,12 +25,13 @@ Hvis mappen ikke er skrivbar brukes en lokal midlertidig loggmappe. Ingen separa
 IT kan overstyre Ivanti-banen med `ABL1_IVANTI` og program-ID med `ABL1_IVANTI_APP_ID`.
 Appen endrer ikke Windows-policyer eller PowerShell ExecutionPolicy.
 
-## PC uten Ivanti
+## Lokal utvikler-PC
 
-De samme to CMD-filene finner lokal Python og bruker et isolert `.venv`. Medfølgende
-offline-pakker brukes under installasjon. Vanlig start laster ikke ned eller installerer noe.
+FELLES er standard. Hvis Ivanti mangler, vises en feil i stedet for å starte en annen Python.
+Starteren leter i både Ivanti- og eldre RES-installasjoner under Program Files og på PATH.
+En eksplisitt `ABL1_IVANTI`-bane må peke på en eksisterende `pwrgate.exe`.
 
-For å velge lokal Python på en PC som også har Ivanti:
+For å velge lokal Python brukes:
 
 ```cmd
 set DRAGEN_LOCAL_PYTHON=1
@@ -40,6 +41,19 @@ START_DRAGEN.cmd --data-dir "D:\LokaleAnalyser\DRAGEN"
 
 Lokale oppstartsfeil skrives til `work/launcher-logs/bootstrap.log`. Flytt hele
 programmappen før installasjon; ikke flytt et ferdig `.venv` mellom PC-er.
+
+## Andre Python-apper, inkludert HemaFrag
+
+DRAGEN installerer ikke NumPy eller pandas. FELLES-installasjonen bruker bare de ni
+låste pakkene i egen `.felles-packages`, med `--no-deps --ignore-installed` slik at
+delte HemaFrag-pakker ikke inngår i resolveren eller endres. Ved oppstart fjernes
+delte bruker-/site-packages fra DRAGENs importsti; pakkene må komme fra DRAGEN-mappen.
+Hvis en av appens pakker allerede er lastet i FELLES-konsollen, stoppes oppstart med
+beskjed om et nytt vindu. Et allerede innlastet Qt/Pillow byttes aldri ut i prosessen.
+
+HemaFrag-repoets krav ved kontrollen var NumPy `>=2.1,<3.0` og pandas `>=2.2,<3.0`.
+En eksisterende feil i jobb-PC-ens delte HemaFrag-miljø krever feillogg og retting der;
+DRAGEN nedgraderer ikke det miljøet automatisk.
 
 ## Fra kildekoden
 

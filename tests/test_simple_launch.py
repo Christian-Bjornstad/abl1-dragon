@@ -5,6 +5,31 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 
 class SimpleLaunchTests(unittest.TestCase):
+    def test_missing_ivanti_never_silently_runs_local_python(self):
+        if os.name!='nt':self.skipTest('Windows CMD')
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            env={**os.environ,'ABL1_NO_PAUSE':'1','ABL1_IVANTI':str(Path(directory)/'missing-pwrgate.exe')}
+            env.pop('DRAGEN_LOCAL_PYTHON',None)
+            result=subprocess.run(f'cmd.exe /d /s /c ""{ROOT/"START_DRAGEN.cmd"}""',env=env,capture_output=True,timeout=10)
+            self.assertEqual(result.returncode,1)
+            self.assertIn(b'Python FELLES kunne ikke',result.stderr)
+            self.assertIn(b'Lokal Python startes ikke automatisk',result.stderr)
+
+    def test_actual_powershell_command_produces_pasteable_python_for_special_path(self):
+        if os.name!='nt':self.skipTest('Windows PowerShell')
+        import subprocess
+        source=(ROOT/'packaging/desktop.cmd').read_text()
+        line=next(line for line in source.splitlines() if line.startswith('powershell.exe '))
+        command=line.split('-Command "',1)[1][:-1]
+        with tempfile.TemporaryDirectory(prefix="DRAGEN O'Neil & Å ") as directory:
+            script=Path(directory)/'start.py';script.write_text('# synthetic')
+            receipt=Path(directory)/'clipboard.txt'
+            prefix='function Set-Clipboard { param($Value) [IO.File]::WriteAllText($env:TEST_RECEIPT,$Value) }; '
+            result=subprocess.run(['powershell.exe','-NoProfile','-Command',prefix+command],env={**os.environ,'ABL1_FELLES_SCRIPT':str(script),'TEST_RECEIPT':str(receipt)},capture_output=True,timeout=15)
+            self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
+            with patch('runpy.run_path',return_value={'main':lambda:0}) as runner:exec(receipt.read_text(encoding='utf-8'),{})
+            self.assertEqual(Path(runner.call_args.args[0]),script)
     def test_only_install_and_start_cmd_are_present_in_main_folder(self):
         self.assertEqual({p.name for p in ROOT.glob('*.cmd')},{'INSTALL_DRAGEN.cmd','START_DRAGEN.cmd'})
     def test_python_entrypoints_call_same_interpreter_helpers_and_preserve_result(self):
