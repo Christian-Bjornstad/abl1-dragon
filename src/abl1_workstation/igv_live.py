@@ -512,6 +512,7 @@ class LiveIgvWidget(QWidget):
                 return
         except ValueError as error:
             self.status_label.setText(str(error))
+            self.message.emit('IGV: '+str(error))
             return
         self.status_label.setText('Kontrollerer hg19-referanse og alignment …')
         self._pending = alignment, reference, variant
@@ -567,6 +568,7 @@ class LiveIgvWidget(QWidget):
             return
         self.server, self.current_alignment = server, alignment
         self.reference_md5 = result[1]
+        self.message.emit('IGV: hg19 chr9 og alignment-header kontrollert. Laster lokal visningsside.')
         self.status_label.setText(f'{alignment.sample} · {locus} · hg19 MD5 kontrollert')
         self.empty_space.hide()
         self.web_view.show()
@@ -579,7 +581,8 @@ class LiveIgvWidget(QWidget):
             from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor
             from PyQt6.QtWebEngineWidgets import QWebEngineView
         except (ImportError, RuntimeError):
-            self.status_label.setText('Installer IGV-komponenten med INSTALLER.cmd og start programmet på nytt.')
+            self.status_label.setText('IGV-komponenten mangler. Kjør INSTALL_DRAGEN.cmd og start i et nytt Python FELLES-vindu.')
+            self.message.emit('IGV: PyQt6-WebEngine kunne ikke importeres.')
             return False
         widget = self
 
@@ -619,7 +622,8 @@ class LiveIgvWidget(QWidget):
                 settings.setAttribute(attribute, False)
         settings.setUnknownUrlSchemePolicy(QWebEngineSettings.UnknownUrlSchemePolicy.DisallowUnknownUrlSchemes)
         self.web_view.titleChanged.connect(self._title_changed)
-        self.web_view.loadFinished.connect(self._load_finished)
+        self.web_page.loadingChanged.connect(self._loading_changed)
+        self.web_page.renderProcessTerminated.connect(self._renderer_terminated)
         self.layout.insertWidget(1, self.web_view, 1)
         self.web_view.hide()
         return True
@@ -635,9 +639,27 @@ class LiveIgvWidget(QWidget):
             self.status_label.setText('IGV kunne ikke lese alignment-filen. Se feilen i viseren.')
             self.message.emit('IGV kunne ikke lese alignment-filen.')
 
-    def _load_finished(self, success):
-        if self.server is not None and not success:
-            self.status_label.setText('IGV kunne ikke lastes.')
+    def _loading_changed(self, info):
+        # loadFinished(False) also describes a cancelled/obsolete navigation.
+        # LoadingInfo identifies the current page and the actual Chromium error.
+        if self.server is None or info.url().toString()!=self.server.url('viewer.html'):
+            return
+        if info.status().name!='LoadFailedStatus' or info.errorCode()==-3:
+            return
+        self.save_image_button.setEnabled(False)
+        code=info.errorCode();domain=info.errorDomain().name
+        message=f'IGV: lokal visningsside kunne ikke lastes ({domain}, kode {code}).'
+        if self.reference_md5:message+=' hg19-referansen er kontrollert.'
+        self.status_label.setText(message+' Se Logg under Analyse.')
+        # Never log a capability URL, a file path, or Chromium's raw error text.
+        self.message.emit(message)
+
+    def _renderer_terminated(self, status, code):
+        if self.server is None:return
+        self.save_image_button.setEnabled(False)
+        message=f'IGV: nettleserprosessen stoppet ({status.name}, kode {code}).'
+        self.status_label.setText(message+' Start DRAGEN i et nytt Python FELLES-vindu.')
+        self.message.emit(message)
 
     def _save_image(self):
         if self.server is None or self.web_view is None or not self.save_image_button.isEnabled():

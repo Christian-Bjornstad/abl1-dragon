@@ -25,6 +25,13 @@ Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal
 
 ## Hvis noe stopper
 
+Ved IGV-feil: kopier IGV-linjene fra **Analyse → Logg**. Feilkoden skiller feil i
+den lokale visningssiden fra en stoppet nettleserprosess. «hg19-referansen er
+kontrollert» betyr at FASTA-sekvensen allerede har bestått MD5-kontrollen.
+**Innstillinger → GRCh37 FASTA** skal peke til selve `chr9.fa` med en tilhørende
+`chr9.fa.fai`, normalt `reference/hg19/chr9.fa`. `manifest.json` er bare metadata
+for den medfølgende referansepakken og velges ikke som FASTA.
+
 Noter hvilken CMD-fil og hvilket trinn som feilet. FELLES-kontrollen skriver
 `work/launcher-logs/felles-check.json`; feil logges i `felles.log` i samme mappe.
 Vanlig Python bruker `bootstrap.log`. En reservebane vises hvis mappen er skrivebeskyttet.

@@ -246,6 +246,42 @@ class AlignmentHeaderTests(unittest.TestCase):
 
 
 class NativeViewerTests(unittest.TestCase):
+    def loading_info(self,server,*,code=-102,status='LoadFailedStatus',url=None):
+        return SimpleNamespace(status=lambda:SimpleNamespace(name=status),errorCode=lambda:code,
+            errorDomain=lambda:SimpleNamespace(name='ConnectionErrorDomain'),
+            url=lambda:__import__('PyQt6.QtCore',fromlist=['QUrl']).QUrl(url or server.url('viewer.html')))
+
+    def test_failed_current_page_reports_code_without_leaking_capability_url(self):
+        widget=LiveIgvWidget(enable_webengine=False)
+        server=LoopbackFileServer({'viewer.html':b'<html></html>'}).start();widget.server=server
+        widget.reference_md5='verified'
+        messages=[];widget.message.connect(messages.append)
+        widget._loading_changed(self.loading_info(server))
+        self.assertIn('-102',widget.status_label.text())
+        self.assertIn('ConnectionErrorDomain',messages[-1])
+        self.assertIn('hg19-referansen er kontrollert',messages[-1])
+        self.assertNotIn(server.token,messages[-1]);self.assertNotIn('http://',messages[-1])
+        widget.close()
+
+    def test_cancelled_old_or_blank_navigation_does_not_replace_reference_status(self):
+        widget=LiveIgvWidget(enable_webengine=False)
+        server=LoopbackFileServer({'viewer.html':b'<html></html>'}).start();widget.server=server
+        for info in (self.loading_info(server,code=-3),self.loading_info(server,status='LoadStoppedStatus'),
+                     self.loading_info(server,url='about:blank'),self.loading_info(server,url=server.url('viewer.html').replace(server.token,'old-token'))):
+            widget.status_label.setText('Kontrollerer hg19-referanse og alignment …')
+            widget._loading_changed(info)
+            self.assertTrue(widget.status_label.text().startswith('Kontrollerer'))
+        widget.close()
+
+    def test_renderer_termination_has_a_distinct_actionable_message(self):
+        widget=LiveIgvWidget(enable_webengine=False)
+        server=LoopbackFileServer({'viewer.html':b'<html></html>'}).start();widget.server=server
+        messages=[];widget.message.connect(messages.append)
+        widget._renderer_terminated(SimpleNamespace(name='CrashedTerminationStatus'),7)
+        self.assertIn('nettleserprosessen',widget.status_label.text())
+        self.assertIn('7',messages[-1]);self.assertFalse(widget.save_image_button.isEnabled())
+        widget.close()
+
     def test_active_view_can_use_the_full_content_height(self):
         from PyQt6.QtWidgets import QWidget
         widget=LiveIgvWidget(enable_webengine=False);widget.resize(900,600)
