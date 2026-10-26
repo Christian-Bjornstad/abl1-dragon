@@ -22,7 +22,7 @@ class LauncherTests(unittest.TestCase):
         self.project.mkdir()
         if (ROOT / "packaging").is_dir():
             shutil.copytree(ROOT / "packaging", self.project / "packaging")
-        for name in ("Start ABL1.cmd", "Installer ABL1.cmd", "Kontroller ABL1.cmd"):
+        for name in ("START_DRAGEN.cmd", "INSTALL_DRAGEN.cmd", "start.py", "install.py"):
             if (ROOT / name).is_file():
                 shutil.copyfile(ROOT / name, self.project / name)
         (self.project / "src" / "abl1_workstation").mkdir(parents=True)
@@ -39,7 +39,7 @@ class LauncherTests(unittest.TestCase):
             "print('synthetic entrypoint stdout')\n"
             "print('synthetic entrypoint stderr',file=sys.stderr)\n"
             "raise SystemExit(7)\n", encoding="utf-8")
-        self.env = dict(os.environ, ABL1_PYTHON=sys.executable,
+        self.env = dict(os.environ, ABL1_PYTHON=sys.executable,DRAGEN_LOCAL_PYTHON='1',ABL1_NO_PAUSE='1',
                         PYTHONIOENCODING="utf-8")
         self.env.pop("PYTHONPATH", None)
 
@@ -59,7 +59,7 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(diagnostic["ready"])
         self.assertEqual(diagnostic["project"], str(self.project.resolve()))
         self.assertFalse((self.project / ".venv").exists())
-        self.assertIn("Installer DRAGEN.cmd", " ".join(diagnostic["errors"]))
+        self.assertIn("INSTALL_DRAGEN.cmd", " ".join(diagnostic["errors"]))
 
     def test_start_does_not_install_or_launch_when_environment_is_missing(self):
         result = self.run_bootstrap("start", "--data-dir", "a data folder")
@@ -116,12 +116,12 @@ class LauncherTests(unittest.TestCase):
             return subprocess.run(command, cwd=self.tmp.name, env=self.env,
                                   input="", capture_output=True, encoding="utf-8",
                                   errors="replace", timeout=90)
-        installed = invoke("Installer ABL1.cmd", "--offline")
+        installed = invoke("INSTALL_DRAGEN.cmd", "--offline")
         self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
-        checked = invoke("Kontroller ABL1.cmd")
+        checked = self.run_bootstrap('check')
         self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
         self.assertTrue(json.loads(checked.stdout)["ready"])
-        started = invoke("Start ABL1.cmd", '--data-dir "a CMD review & data"')
+        started = invoke("START_DRAGEN.cmd", '--data-dir "a CMD review & data"')
         self.assertEqual(started.returncode, 7, started.stdout + started.stderr)
         self.assertEqual(json.loads((self.project / "arguments.json").read_text()),
                          ["--data-dir", "a CMD review & data"])

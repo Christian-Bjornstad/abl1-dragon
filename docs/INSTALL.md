@@ -1,78 +1,55 @@
-# Windows
+# Installasjon og start
 
-Python 3.12–3.14, 64 bit, må være installert. Pakk ut hele offline-pakken
-til en fast, skrivbar programmappe.
+Pakk ut hele DRAGEN-mappen til et fast, skrivbart sted.
 
-1. Kjør **Installer DRAGEN.cmd** én gang.
-2. Kjør **Start DRAGEN.cmd**.
+1. Kjør **INSTALL_DRAGEN.cmd** én gang.
+2. Kjør **START_DRAGEN.cmd** for å åpne appen.
 
-Installeringen lager et isolert `.venv` i programmappen. Med `wheelhouse` til
-stede brukes bare lokale pakker. Vanlig oppstart installerer ingenting.
-**Kontroller DRAGEN.cmd** viser Python, avhengigheter og eventuelle feil.
-Logg: `work/launcher-logs/bootstrap.log`.
+Det finnes bare disse to CMD-filene. Python og avhengigheter kontrolleres under installasjon og oppstart.
 
-Bestemt Python kan velges med `ABL1_PYTHON` eller første argument:
+## Jobb-PC / Python FELLES
+
+Som i MolStat åpner filene Python FELLES via Ivanti (`pwrgate.exe`, program-ID 15694)
+og kopierer riktig kommando til utklippstavlen. Lim inn med **Ctrl+V** i Python FELLES
+og trykk **Enter**. Etter installasjon lukkes Python FELLES. Start appen med
+**START_DRAGEN.cmd** og lim inn kommandoen i det nye vinduet.
+
+`install.py` og `start.py` kjører i samme Python-interpreter som FELLES. Installasjonen
+bruker offline-hjulene i `wheelhouse` og appens egen `.felles-packages`. Globale Python-pakker
+endres ikke. Python 3.12–3.14, Windows 64 bit støttes; MolStat-oppsettet bruker FELLES 3.14.
+Et nytt FELLES-vindu uten innlastet Qt kreves.
+
+Feil vises i konsollen med bane til loggen i `work/launcher-logs/felles.log`.
+Hvis mappen ikke er skrivbar brukes en lokal midlertidig loggmappe. Ingen separat kontrollfil kreves.
+
+IT kan overstyre Ivanti-banen med `ABL1_IVANTI` og program-ID med `ABL1_IVANTI_APP_ID`.
+Appen endrer ikke Windows-policyer eller PowerShell ExecutionPolicy.
+
+## PC uten Ivanti
+
+De samme to CMD-filene finner lokal Python og bruker et isolert `.venv`. Medfølgende
+offline-pakker brukes under installasjon. Vanlig start laster ikke ned eller installerer noe.
+
+For å velge lokal Python på en PC som også har Ivanti:
 
 ```cmd
-"Installer DRAGEN.cmd" --python "C:\Python314\python.exe" --offline
-"Start DRAGEN.cmd" --data-dir "D:\LokaleAnalyser\ABL1"
+set DRAGEN_LOCAL_PYTHON=1
+INSTALL_DRAGEN.cmd --python "C:\Python314\python.exe" --offline
+START_DRAGEN.cmd --data-dir "D:\LokaleAnalyser\DRAGEN"
 ```
+
+Lokale oppstartsfeil skrives til `work/launcher-logs/bootstrap.log`. Flytt hele
+programmappen før installasjon; ikke flytt et ferdig `.venv` mellom PC-er.
 
 ## Fra kildekoden
 
-Git-repoet inneholder ingen binære avhengigheter. Bruk **Installer DRAGEN.cmd --online**
-på en PC som kan laste ned Python-pakker, eller lag en wheelhouse for målmaskinen:
+Git-repoet inneholder ikke binære avhengigheter. Offline-utgaven ligger under GitHub Releases.
+På utvikler-PC uten Ivanti kan `INSTALL_DRAGEN.cmd --online` laste ned låste avhengigheter.
 
-```cmd
-python -m pip download --only-binary=:all: -r requirements-desktop.txt --dest wheelhouse
-```
+## Edge og innlogging
 
-Ved flytting til en annen Python-versjon trengs kompatible wheels, særlig PyQt6-sip.
-Den ferdige offline-pakken inkluderer Windows x64-wheels for 3.12, 3.13 og 3.14.
-Ikke flytt et ferdig `.venv` mellom maskiner.
-
-## Python FELLES / Ivanti
-
-Angi lokalt godkjent program-ID i `ABL1_IVANTI_APP_ID`. `ABL1_IVANTI` kan overstyre
-banen til `pwrgate.exe`. Kjør **Installer med Python FELLES.cmd**, lim inn den
-kopierte kommandoen i Python-vinduet og trykk Enter. Etter installasjon lukkes
-vinduet. Bruk deretter **Start med Python FELLES.cmd** på samme måte.
-
-FELLES-flyten bruker samme interpreter og appens `.felles-packages`, uten å endre
-globale pakker. Den krever wheelhouse, pip og et nytt FELLES-vindu uten innlastet Qt.
-Ivanti- og organisasjonspolicy må kontrolleres lokalt.
-
-Bruk **Kontroller med Python FELLES.cmd** før installasjon og ved oppstartsfeil.
-Den skiller mellom «klar for installasjon» og «klar for oppstart» og skriver
-`work/launcher-logs/felles-check.json`. Feil fra installasjon/oppstart lagres i
-`work/launcher-logs/felles.log`. Hvis programmappen ikke er skrivbar, vises en
-midlertidig lokal reservebane i konsollen. Kontrollen bruker ikke nettverk eller GUI.
-
-## Edge
-
-Bruk **Innstillinger** for kildevalg og innlogging. Fullfør innlogging og MFA i Edge.
-Innloggingsstatus kontrolleres mens innstillingssiden er åpen. Et lukket kildevindu
-kan åpnes igjen med samme profil. Ingen innloggingsfelter finnes i appen.
-
-Status lagres separat per database i programøkten. En uklar kontroll beholder
-siste bekreftede innlogging med tidspunkt. Bekreftet utlogging eller lukket
-vindu oppdaterer bare den aktuelle kilden. Midlertidige kontrollfeil lukker ikke
-nettleservinduet.
-
-Kontrollert portaloppslag bruker en egen profil per kilde under arbeidsmappens
-`PortalProfiler/<kilde>`. Innloggingen gjøres i disse Edge-vinduene. Appen starter
-sin egen Edge-prosess med en midlertidig kontrollport på `127.0.0.1`, og kobler
-bare til en ny oppstartsmarkør fra den valgte profilen. Vanlige Edge-vinduer og
-profiler brukes ikke. Ved avslutning lukkes bare appens egne portalvinduer.
-
-Appen stopper hvis
-påvist Edge-policy overstyrer profilvalget, eller policykontrollen ikke kan leses.
-Policy som blokkerer DevTools-tilgang respekteres. Ingen passord eller cookies
-leses. Profilene skal ikke deles eller legges i Git. Vanlige offentlige
-kildelenker kan fortsatt åpnes manuelt i appens separate `EdgeProfil`.
-
-En egen profilmappe hindrer ikke nødvendigvis Edge i å koble til Windows-kontoen
-eller aktivere Microsoft-synk. Dette ble observert under den manuelle testen.
-Kontroller riktig jobbkonto og synk-oppsett med lokal IT før analysearbeid.
-Appen endrer ikke Edge-policy eller konto-/synk-innstillinger.
-[Microsoft om automatisk innlogging](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/implicitsigninenabled).
+E-post og passord kan lagres under **Innstillinger**, i Windows Credential Manager.
+Status er separat per database. MFA og ukjente SSO-skjemaer fullføres i Edge.
+Appen bruker egne nettleserprofiler og respekterer Edge-policy. En egen profil hindrer
+ikke nødvendigvis automatisk Microsoft-innlogging eller synk; kontroller riktig jobbkonto.
+Nettleserprofiler skal ikke deles eller legges i Git.

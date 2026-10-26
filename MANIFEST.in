@@ -1,4 +1,4 @@
-include LICENSE README.md requirements-desktop.txt start_abl1.py start_python_felles.py install_python_felles.py check_python_felles.py
+include LICENSE README.md requirements-desktop.txt start_abl1.py start.py install.py
 include *.cmd
 recursive-include packaging *.py *.cmd *.md
 include assets/brand/abl1-dragon.png assets/brand/abl1-dragon.ico

@@ -175,9 +175,9 @@ def requirements(root):
 
 def activate(root=ROOT):
     root=Path(root).resolve();project,required=requirements(root);target=package_dir(root)
-    if not target.is_dir():raise RuntimeError('Kjør Installer med Python FELLES.cmd først.')
+    if not target.is_dir():raise RuntimeError('Kjør INSTALL_DRAGEN.cmd først.')
     if any(name.startswith('PyQt6') for name in sys.modules):
-        raise RuntimeError('Qt er allerede lastet. Start et nytt Python FELLES-vindu før ABL1.')
+        raise RuntimeError('Qt er allerede lastet. Start et nytt Python FELLES-vindu før DRAGEN.')
     installed={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
     missing=[r['name']+'=='+r['required'] for r in required if installed.get(r['name'].lower().replace('_','-'))!=r['required']]
     if missing:raise RuntimeError('Mangler lokale FELLES-pakker: '+', '.join(missing))
@@ -197,7 +197,7 @@ def install(root=ROOT):
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
         if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
-            print('Lokale FELLES-pakker finnes. Bruk Start med Python FELLES.cmd i et nytt vindu.');return 0
+            print('Lokale FELLES-pakker finnes. Bruk START_DRAGEN.cmd i et nytt vindu.');return 0
         raise RuntimeError('Ufullstendig/eldre FELLES-pakkemappe: '+str(target)+'. Bevar eller flytt denne før nytt forsøk.')
     temporary=target.with_name(target.name+'.installing')
     temporary.mkdir(parents=True,exist_ok=False)
@@ -221,26 +221,32 @@ def install(root=ROOT):
         temporary.rename(target)
     except Exception:
         print('Installasjon ble stoppet. Kontroller eventuell .installing-mappe før nytt forsøk.');raise
-    print('Installasjonen er kontrollert. Lukk dette FELLES-vinduet og bruk Start med Python FELLES.cmd.')
+    print('Installasjonen er kontrollert. Lukk dette FELLES-vinduet og bruk START_DRAGEN.cmd.')
     return 0
 
 
 def start(root=ROOT,argv=None):
     activate(root)
+    # FELLES can reuse a console after an update; never start cached app code.
+    for name in tuple(sys.modules):
+        if name=='abl1_workstation' or name.startswith('abl1_workstation.'):del sys.modules[name]
+    import abl1_workstation
+    if not Path(abl1_workstation.__file__).resolve().is_relative_to(Path(root).resolve()/'src/abl1_workstation'):
+        raise RuntimeError('DRAGEN ble lastet fra feil programmappe.')
     from abl1_workstation.__main__ import main
     return main(list(argv or []))
 
 
-def entry(action,root=ROOT):
+def entry(action,root=ROOT,argv=None):
     try:
         if action=='check':
             report=check(root)
             return 0 if report['ready_for_install'] or report['ready_for_start'] else 1
         if action=='install':return install(root)
-        if action=='start':return start(root)
+        if action=='start':return start(root,argv=argv)
         raise ValueError('Ukjent FELLES-handling: '+str(action))
     except Exception as error:
         path=_record_failure(root,str(action))
-        print('ABL1 Python FELLES: '+str(error))
+        print('DRAGEN Python FELLES: '+str(error))
         print('Feillogg: '+str(path or 'kunne ikke lagres'))
         return 1

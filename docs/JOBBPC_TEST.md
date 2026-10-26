@@ -5,16 +5,10 @@ Bruk først en lokal testanalyse som er godkjent for metodeutprøving.
 
 ## Python FELLES
 
-1. Kjør **Kontroller med Python FELLES.cmd**, lim inn kommandoen i FELLES og trykk Enter.
-   Før første installasjon skal den kunne vise «Installasjon: klar» og «Oppstart: ikke klar».
-2. Kjør **Installer med Python FELLES.cmd** på samme måte. Lukk FELLES-vinduet etterpå.
-3. Kjør **Start med Python FELLES.cmd** i et nytt FELLES-vindu.
+1. Kjør **INSTALL_DRAGEN.cmd**. Python FELLES åpnes via Ivanti; lim inn med Ctrl+V og trykk Enter.
+2. Lukk FELLES etter installasjon. Kjør **START_DRAGEN.cmd** og lim inn i det nye FELLES-vinduet.
 
-Disse CMD-filene trenger lokal Ivanti-program-ID i `ABL1_IVANTI_APP_ID`.
-En separat lokal testpakke kan ha forhåndsutfylte startfiler som setter dette bare
-for den aktuelle kjøringen. De endrer ikke Windows-miljø eller register.
-
-På PC med vanlig Python brukes **Installer DRAGEN.cmd** og **Start DRAGEN.cmd**.
+På PC uten Ivanti bruker de samme filene lokal Python. Det er ingen egen kontrollfil. Feil og loggbane vises ved installasjon eller start.
 
 ## Kontroller i appen
 

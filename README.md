@@ -8,8 +8,8 @@ Mappeimport, variantutvalg, lokal IGV, databaseoppslag og Excel med ett ark per 
 Krever Python 3.12–3.14, 64 bit.
 
 1. Last ned og pakk ut [offline-pakken](https://github.com/Christian-Bjornstad/abl1-dragon/releases/latest).
-2. Kjør **Installer DRAGEN.cmd**.
-3. Kjør **Start DRAGEN.cmd**.
+2. Kjør **INSTALL_DRAGEN.cmd**.
+3. Kjør **START_DRAGEN.cmd**.
 
 [Installasjon, Python FELLES og Edge](docs/INSTALL.md).
 [Første test på jobb-PC](docs/JOBBPC_TEST.md).

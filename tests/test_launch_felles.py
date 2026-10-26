@@ -125,7 +125,7 @@ class FellesTests(unittest.TestCase):
         log=(self.root/'work/launcher-logs/felles.log').read_text(encoding='utf-8')
         self.assertIn('action=start',log)
         self.assertIn('Traceback',log)
-        self.assertIn('Installer med Python FELLES.cmd',log)
+        self.assertIn('INSTALL_DRAGEN.cmd',log)
 
     def test_check_does_not_import_qt_or_pip_or_start_processes_or_network(self):
         self.diagnostic_fixture()
