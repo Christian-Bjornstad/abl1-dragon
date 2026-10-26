@@ -572,7 +572,20 @@ class LiveIgvWidget(QWidget):
         self.status_label.setText(f'{alignment.sample} · {locus} · hg19 MD5 kontrollert')
         self.empty_space.hide()
         self.web_view.show()
-        self.web_view.setUrl(QUrl(server.url('viewer.html')))
+        try:self._load_viewer()
+        except (OSError,ValueError,UnicodeError):
+            self.status_label.setText('IGV-visningssiden kunne ikke leses fra installasjonen. Pakk ut hele kildekoden på nytt.')
+            self.message.emit('IGV: den registrerte visningssiden kunne ikke leses.')
+
+    def _load_viewer(self):
+        # The application owns this small static document. Load it directly;
+        # only indexed data requests need the private loopback server.
+        resource=self.server.resources['viewer.html']
+        if isinstance(resource,_File):
+            with resource.open() as stream:raw=stream.read(256*1024+1)
+        else:raw=resource
+        if len(raw)>256*1024:raise ValueError('IGV-visningssiden er for stor.')
+        self.web_view.setHtml(raw.decode('utf-8-sig'),QUrl(self.server.url('viewer.html')))
 
     def _create_webengine(self):
         if self.web_view is not None:

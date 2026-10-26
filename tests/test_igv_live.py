@@ -246,6 +246,17 @@ class AlignmentHeaderTests(unittest.TestCase):
 
 
 class NativeViewerTests(unittest.TestCase):
+    def test_viewer_document_uses_registered_html_instead_of_http_navigation(self):
+        from unittest.mock import Mock
+        widget=LiveIgvWidget(enable_webengine=False)
+        server=LoopbackFileServer({'viewer.html':b'<html><head></head><body>synthetic</body></html>'}).start()
+        widget.server=server;widget.web_view=Mock()
+        widget._load_viewer()
+        widget.web_view.setUrl.assert_not_called()
+        html,base=widget.web_view.setHtml.call_args.args
+        self.assertIn('synthetic',html);self.assertEqual(base.toString(),server.url('viewer.html'))
+        widget.web_view=None;widget.close()
+
     def loading_info(self,server,*,code=-102,status='LoadFailedStatus',url=None):
         return SimpleNamespace(status=lambda:SimpleNamespace(name=status),errorCode=lambda:code,
             errorDomain=lambda:SimpleNamespace(name='ConnectionErrorDomain'),
