@@ -9,9 +9,11 @@
     #igv { padding: 12px 8px; }
     #error { padding: 18px; white-space: pre-wrap; }
     .igv-navbar { background-color: #eae6ef !important; }
+    #presets {padding:8px 8px 0;display:flex;gap:8px;}
+    #presets button {background:white;color:#412D73;border:1px solid #D5CFDE;padding:6px 12px;border-radius:4px;cursor:pointer;}
   </style>
   <script src="igv-3.8.9.min.js" defer></script>
   <script src="viewer.js" defer></script>
 </head>
-<body><div id="error" hidden></div><div id="igv"></div></body>
+<body><div id="presets"><button id="reset-view">Standardzoom</button><button id="wider-view">Oversikt · 200 bp</button></div><div id="error" hidden></div><div id="igv"></div></body>
 </html>

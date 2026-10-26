@@ -14,10 +14,12 @@
         name: "hg19 / GRCh37",
         fastaURL: url("reference.fa"),
         indexURL: url("reference.fa.fai"),
-        chromosomeOrder: [config.chromosome]
+        chromosomeOrder: [config.chromosome],
+        cytobandURL: url('cytoband.txt')
       },
       locus: config.locus,
-      showIdeogram: false,
+      showIdeogram: true,
+      showSequence: false,
       showSVGButton: false,
       showCenterGuide: true,
       showTrackLabels: true,
@@ -28,15 +30,30 @@
         format: config.kind,
         url: url(config.alignment),
         indexURL: url(config.index),
-        height: 400,
-        color: "#82718f",
+        height: 420,
+        order: 1,
+        color: "#C3C3C3",
+        colorBy: "none",
+        coverageColor: "#A8A8A8",
+        coverageTrackHeight: 55,
+        showMismatches: true,
+        showAllBases: false,
+        displayMode: "EXPANDED",
+        alignmentRowHeight: 12,
         showCoverage: true,
         samplingWindowSize: 100,
         samplingDepth: 1000,
         visibilityWindow: 100000,
         filter: {duplicates: false}
-      }]
+      },
+      {type: 'sequence', name: 'Sekvens', order: 2},
+      {type: 'annotation', format: 'bed', name: 'Protein · NM_005157.6', url: url('protein.bed'), indexed: false,
+        order: 3, height: 45, displayMode: 'COLLAPSED', color: '#412D73'},
+      {type: 'annotation', format: 'bed', name: 'ABL1 · NM_005157.6', url: url('abl1.bed'), indexed: false,
+        order: 4, height: 55, displayMode: 'EXPANDED', color: '#412D73'}]
     });
+    document.getElementById('reset-view').onclick = () => window.dragonBrowser.search(config.locus);
+    document.getElementById('wider-view').onclick = () => window.dragonBrowser.search(config.widerLocus);
     document.title = "ABL1_IGV_READY";
   } catch (error) {
     const target = document.getElementById("error");

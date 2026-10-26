@@ -545,7 +545,7 @@ class LiveIgvWidget(QWidget):
         path, index, kind = result[0]
         assets = Path(resource_root()) / 'assets' / 'igv'
         try:
-            resources = {name: assets / name for name in ('viewer.html', 'viewer.js', 'igv-3.8.9.min.js')}
+            resources = {name: assets / name for name in ('viewer.html', 'viewer.js', 'igv-3.8.9.min.js','cytoband.txt','abl1.bed','protein.bed')}
             resources.update({f'alignment.{kind}': path, f'alignment.{kind}.index': index,
                               'reference.fa': reference.fasta, 'reference.fa.fai': reference.index})
             server = LoopbackFileServer(resources)
@@ -555,6 +555,8 @@ class LiveIgvWidget(QWidget):
             config = {'sample': str(alignment.sample), 'kind': kind, 'locus': locus,
                       'chromosome': reference.chromosome, 'alignment': f'alignment.{kind}',
                       'index': f'alignment.{kind}.index'}
+            position=int(variant.get('pos',133748283)) if variant else 133748283
+            config['widerLocus']=reference.chromosome+':'+str(max(1,position-100))+'-'+str(position+100)
             server.resources['config.json'] = json.dumps(config, ensure_ascii=True).encode('utf-8')
             server.start()
         except (OSError, ValueError, RuntimeError) as caught:
@@ -625,6 +627,7 @@ class LiveIgvWidget(QWidget):
     def _title_changed(self, title):
         if self.server is None:
             return
+        if self.web_view.url().toString()!=self.server.url('viewer.html'):return
         self.save_image_button.setEnabled(title == 'ABL1_IGV_READY')
         if title=='ABL1_IGV_READY' and self.current_alignment:
             self.message.emit('IGV klar for '+str(self.current_alignment.sample)+'.')
@@ -640,8 +643,29 @@ class LiveIgvWidget(QWidget):
         if self.server is None or self.web_view is None or not self.save_image_button.isEnabled():
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Lagre IGV-bilde', 'IGV.png', 'PNG (*.png)')
-        if path and not self.web_view.grab().save(path, 'PNG'):
-            self.status_label.setText('Bildet kunne ikke lagres.')
+        if path:
+            self.capture_png(path,lambda saved,error:self.status_label.setText(error or 'IGV-bilde lagret.'))
+
+    def capture_png(self,path,callback):
+        """Capture all rendered tracks; callback is scoped to this exact load."""
+        generation=self._generation
+        if not self.server or not self.web_view or not self.save_image_button.isEnabled():
+            callback(None,'IGV er ikke ferdig lastet.');return
+        def render(svg):
+            if generation!=self._generation:callback(None,'Valgt variant ble endret.');return
+            try:
+                from PyQt6.QtSvg import QSvgRenderer
+                from PyQt6.QtGui import QImage,QPainter
+                if not isinstance(svg,str) or not svg.startswith('<svg') or len(svg)>30_000_000:raise ValueError('IGV-bildet kunne ikke leses.')
+                renderer=QSvgRenderer(svg.encode());size=renderer.defaultSize()
+                if not renderer.isValid() or size.width()<100 or size.height()<100 or size.width()*size.height()>32_000_000:
+                    raise ValueError('IGV-bildet har ugyldig størrelse.')
+                image=QImage(size,QImage.Format.Format_ARGB32);image.fill(Qt.GlobalColor.white)
+                painter=QPainter(image);renderer.render(painter);painter.end()
+                if not image.save(str(path),'PNG'):raise ValueError('IGV-bildet kunne ikke lagres.')
+                callback(str(path),None)
+            except (ValueError,RuntimeError) as error:callback(None,str(error))
+        self.web_page.runJavaScript('window.dragonBrowser ? window.dragonBrowser.toSVG() : null',render)
 
     def shutdown(self):
         self.clear()
