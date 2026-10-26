@@ -12,6 +12,10 @@ Bruk et nytt FELLES-vindu etter installasjon. Ingen release eller `wheelhouse` k
 installasjonen henter de låste Python-pakkene når de ikke følger kildekoden.
 Dette krever nettverkstilgang til Python-pakkeregisteret.
 
+Installasjonen er ferdig når Python FELLES viser **DRAGEN ER FERDIG INSTALLERT** i en
+tydelig ramme. Meldingen vises etter kontroll av pakkeversjonene, også hvis riktig
+installasjon allerede finnes. Ved feil vises ingen ferdigmelding.
+
 ## Samme startmønster som PRONTO
 
 De to CMD-filene inneholder hele valget av interpreter. De bruker `install.py` og

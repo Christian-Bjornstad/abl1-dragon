@@ -211,6 +211,15 @@ def activate(root=ROOT):
     return project
 
 
+def _installation_finished():
+    print('\n'+'='*48)
+    print('DRAGEN ER FERDIG INSTALLERT')
+    print('Alle pakkeversjoner er kontrollert.')
+    print('Lukk dette Python FELLES-vinduet.')
+    print('Kjor START_DRAGEN.cmd for aa starte appen.')
+    print('='*48+'\n',flush=True)
+
+
 def install(root=ROOT,*,offline=None,pip_main=None):
     root=Path(root).resolve();project,required=requirements(root)
     if _loaded_app_modules():
@@ -226,7 +235,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
         if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
-            print('Lokale FELLES-pakker finnes. Bruk START_DRAGEN.cmd i et nytt vindu.');return 0
+            _installation_finished();return 0
         print('Reparerer DRAGENs lokale pakker; eksisterende mappe bevares som sikkerhetskopi.')
     target.parent.mkdir(parents=True,exist_ok=True)
     temporary=Path(tempfile.mkdtemp(prefix=target.name+'.installing-',dir=target.parent))
@@ -255,8 +264,8 @@ def install(root=ROOT,*,offline=None,pip_main=None):
             if backup is not None and not target.exists():backup.rename(target)
             raise
     except Exception:
-        print('Installasjon ble stoppet. Kontroller eventuell .installing-mappe før nytt forsøk.');raise
-    print('Installasjonen er kontrollert. Lukk dette FELLES-vinduet og bruk START_DRAGEN.cmd.')
+        print('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT. Se feilen nedenfor.');raise
+    _installation_finished()
     return 0
 
 

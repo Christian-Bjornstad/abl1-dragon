@@ -49,7 +49,8 @@ if errorlevel 1 goto felles_failed
 if not "%DRAGEN_CLIPBOARD_EXIT%"=="0" goto clipboard_failed
 echo Python FELLES opens through Ivanti.
 echo Paste the copied command with Ctrl+V, then press Enter.
-echo Close Python FELLES after installation and open START_DRAGEN.cmd.
+echo Vent til Python FELLES viser: DRAGEN ER FERDIG INSTALLERT.
+echo Lukk deretter Python FELLES og kjor START_DRAGEN.cmd.
 if not defined ABL1_NO_PAUSE pause
 exit /b 0
 

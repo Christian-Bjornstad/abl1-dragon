@@ -51,6 +51,17 @@ class FellesTests(unittest.TestCase):
         result=self.invoke(code)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('source-install-ok',result.stdout)
+        self.assertIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
+        self.assertIn('START_DRAGEN.cmd',result.stdout)
+    def test_already_installed_shows_completion_without_running_pip(self):
+        (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
+        code=("t=f['package_dir'](root);dist=t/'pip-test.dist-info';dist.mkdir(parents=True)\n"
+              "(dist/'METADATA').write_text('Name: pip\\nVersion: "+ensurepip.version()+"\\n')\n"
+              "def forbidden(args):raise AssertionError('pip must not run')\n"
+              "assert f['install'](root,pip_main=forbidden)==0\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
     def test_missing_packages_does_not_fall_back_to_global_qt(self):
         result=self.invoke("f['package_dir'](root).mkdir(parents=True)\nf['activate'](root)")
         self.assertNotEqual(result.returncode,0);self.assertIn('Mangler lokale',result.stderr)
@@ -58,6 +69,8 @@ class FellesTests(unittest.TestCase):
         (self.root/'wheelhouse').mkdir()
         result=self.invoke("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\nf['install'](root,pip_main=lambda args:7)")
         self.assertNotEqual(result.returncode,0);self.assertIn('Pakkeinstallasjonen feilet',result.stderr)
+        self.assertNotIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
+        self.assertIn('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT',result.stdout)
         self.assertEqual(next((self.root/'.felles-packages').rglob('bevar.txt')).read_text(),'bevar')
     def test_repair_preserves_old_packages_and_ignores_an_abandoned_install_folder(self):
         (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
