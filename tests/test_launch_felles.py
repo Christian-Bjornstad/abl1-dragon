@@ -46,7 +46,7 @@ class FellesTests(unittest.TestCase):
               " return 0\n"
               "with patch.object(Path,'rename',side_effect=PermissionError(5,'access denied')):\n"
               " assert f['install'](root,pip_main=fake_pip)==0\n"
-              "selected=f['package_dir'](root)\nassert selected.is_relative_to(root/'user-local')\n"
+              "selected=f['package_dir'](root)\nassert selected.is_relative_to((root/'user-local').resolve())\n"
               "assert (shared/'locked.txt').read_text()=='another user is running this'\n"
               "os.environ['LOCALAPPDATA']=str(root/'second-user')\n"
               "assert f['package_dir'](root)!=selected\n")
