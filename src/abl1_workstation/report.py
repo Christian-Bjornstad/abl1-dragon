@@ -13,7 +13,9 @@ STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','li
 def source_text(result):
     if not result:return 'Ikke slått opp'
     status=result.get('status')
-    if status!='found':return STATUS_NAMES.get(status,status or 'Ukjent status')
+    if status!='found':
+        label=STATUS_NAMES.get(status,status or 'Ukjent status')
+        return label+(': '+str(result['summary']) if result.get('summary') else '')
     parts=[]
     for field in ('classification','evidence_level','summary'):
         value=result.get(field)
@@ -48,6 +50,19 @@ def _image(sheet,path,row):
     sheet.add_image(image,'A'+str(row))
     return row+math.ceil(image.height/20)+2
 
+
+def screenshot_records(result):
+    """Keep compatibility with a single image; deduplicate by local path."""
+    if not result or result.get('status')!='found' or result.get('identity_verified') is not True:return []
+    records=[];seen=set()
+    for record in result.get('screenshots') or []:
+        if not isinstance(record,dict) or not record.get('path'):continue
+        path=str(record['path'])
+        if path not in seen:records.append(record);seen.add(path)
+    if result.get('screenshot') and str(result['screenshot']) not in seen:
+        records.insert(0,{'path':str(result['screenshot']),'label':'Variantresultat'})
+    return records
+
 def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnomad','cosmic','oncokb','franklin'),samples=None,selection='',igv_images=None,igv_errors=None):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment,Font,PatternFill
@@ -79,12 +94,29 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnoma
             sheet.row_dimensions[row].height=24
             if name=='AF (%)':cell.number_format='0.00'
             if name=='Protein, enkeltallel' and flags(variant):cell.comment=Comment(safe_text('; '.join(flags(variant))),APP_NAME)
-        row=12;block(row,'IGV',heading=True);row+=1
+        # All selected sources remain visible above the image appendix, on the
+        # same variant sheet. No overview/data/attachment worksheet is created.
+        sources={r['provider']:r for r in lookup_results.get(allele_key(variant),[])}
+        row=12;block(row,'Databaser',heading=True);row+=1
+        for provider in providers:
+            result=sources.get(provider)
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=2)
+            cell=sheet.cell(row,1,PROVIDER_NAMES.get(provider,provider));cell.font=Font(bold=True,color='7150A1')
+            sheet.merge_cells(start_row=row,start_column=3,end_row=row,end_column=8)
+            value=sheet.cell(row,3,safe_text(source_text(result)));value.alignment=Alignment(wrap_text=True,vertical='top')
+            sheet.row_dimensions[row].height=min(110,max(34,18*math.ceil(len(str(value.value))/115)))
+            if result:
+                value.comment=Comment(safe_text('\n'.join(str(result.get(k) or '') for k in ('checked_at','accession','identity_method'))),APP_NAME)
+                url=str(result.get('url') or '')
+                if urlsplit(url).scheme=='https':cell.hyperlink=url
+            row+=1
+        row+=1;block(row,'IGV',heading=True);row+=1
         picture=(igv_images or {}).get(row_key(variant))
-        if picture:row=_image(sheet,picture,row)
+        if picture:
+            try:row=_image(sheet,picture,row)
+            except (OSError,ValueError):block(row,'IGV: Bildet kunne ikke leses.');row+=2
         else:
             block(row,'Ikke tilgjengelig: '+str((igv_errors or {}).get(row_key(variant)) or 'BAM/CRAM og kontrollert referanse kreves.'));row+=2
-        sources={r['provider']:r for r in lookup_results.get(allele_key(variant),[])}
         for provider in providers:
             result=sources.get(provider);cell=block(row,PROVIDER_NAMES.get(provider,provider),heading=True);row+=1
             text=block(row,source_text(result));sheet.row_dimensions[row].height=64
@@ -93,9 +125,16 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','gnoma
                 url=str(result.get('url') or '')
                 if urlsplit(url).scheme=='https':cell.hyperlink=url
             row+=2
-            picture=result.get('screenshot') if result and result.get('status')=='found' and result.get('identity_verified') else None
-            if picture:row=_image(sheet,picture,row)
-            elif result and result.get('screenshot_error'):block(row,'Bilde: '+str(result['screenshot_error']));row+=2
+            pictures=screenshot_records(result)
+            for picture in pictures:
+                caption=str(picture.get('label') or 'Variantresultat')
+                captured=picture.get('captured_at') or (result or {}).get('captured_at')
+                if captured:caption+=' · '+str(captured)
+                block(row,caption);row+=2
+                try:row=_image(sheet,picture['path'],row)
+                except (OSError,ValueError):block(row,'Bildet kunne ikke leses. Hent bildet på nytt.');row+=2
+            if result and result.get('screenshot_error'):block(row,'Bilde: '+str(result['screenshot_error']));row+=2
+            elif not pictures:block(row,'Ingen kildebilder hentet.');row+=2
         sheet.freeze_panes='C4';sheet.print_options.horizontalCentered=True
         sheet.sheet_properties.pageSetUpPr.fitToPage=True
         sheet.page_setup.orientation='landscape';sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
