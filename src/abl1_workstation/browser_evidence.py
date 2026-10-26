@@ -36,7 +36,7 @@ def dismiss_cookies(context,provider):
 
 def activate(context,label):
     if label not in ('Computed Classification','ACMG Classification','Oncogenic Classification'):raise ValueError('Ukjent resultatfane.')
-    return evaluate(context,'franklin',"""
+    return evaluate(context,'franklin',r"""
       if(!/\/clinical-db\/variant\/snp(?:Tumor)?\//.test(location.pathname))return false;
       const label="""+json.dumps(label)+""";
       let matches=[...document.querySelectorAll('[role=tab]')].filter(e=>visible(e)&&e.innerText.trim()===label);

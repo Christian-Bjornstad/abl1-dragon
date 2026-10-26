@@ -189,6 +189,14 @@ def parse_portal_snapshot(provider,variant,snapshot):
         return {**result,'status':'not_found','summary':'Portalen rapporterte ingen variant for det identitetskontrollerte søket. Dette betyr ikke benign.'}
     if not ready:return result
     classifications=_labelled_classifications(provider,text)
+    biological_effect=''
+    if provider=='oncokb':
+        scoped=snapshot.get('oncokb_fields') or {}
+        value=scoped.get('Oncogenicity','')
+        if re.fullmatch(r'Oncogenic|Likely Oncogenic|Resistance|Likely Neutral|Neutral|Inconclusive|Unknown',value,re.I):
+            classifications=[('Oncogenicity',value)]
+        effect=scoped.get('Biological Effect','')
+        if re.fullmatch(r'(?:Likely )?(?:Gain-of-function|Loss-of-function|Switch-of-function|Neutral|Inconclusive|Unknown)',effect,re.I):biological_effect=effect
     readable_page=(provider=='oncokb' and snapshot.get('oncokb_result_visible') is True
                    and 'Clinical Implications for this Biomarker' in text)
     readable_page=readable_page or (provider=='franklin' and snapshot.get('franklin_result_visible') is True
@@ -196,6 +204,7 @@ def parse_portal_snapshot(provider,variant,snapshot):
     if provider!='cosmic' and not classifications and not readable_page:return result
     levels=_labelled_levels(text)
     excerpt=[label+': '+value for label,value in classifications+levels]
+    if biological_effect:excerpt.append('Biological Effect: '+biological_effect)
     classification='; '.join(label+': '+value for label,value in classifications) if provider=='franklin' else '; '.join(value for _,value in classifications)
     summary=(' | '.join(excerpt[:8]) if excerpt else 'COSMIC oversikt og kildeinnhold er tilgjengelig.')
     if readable_page and not classifications:
@@ -417,6 +426,14 @@ class _EdgeContext:
         self._page_call('Page.navigate',{'url':url})
     def snapshot(self,*,auth_only=False):
         text_field='' if auth_only else "text:(document.body?document.body.innerText:'').slice(0,120000),"
+        result_fields='' if auth_only else """oncokb_fields:(()=>{
+          if(location.hostname!=='www.oncokb.org')return {};
+          const roots=[...document.querySelectorAll('[class*=SomaticGermlineTiles-module__alterationTileItems]')].filter(visible);
+          if(roots.length!==1)return {};
+          const result={};for(const label of ['Oncogenicity','Biological Effect']){
+            const headings=[...roots[0].querySelectorAll('h4')].filter(e=>visible(e)&&e.innerText.trim()===label);
+            if(headings.length===1&&headings[0].nextElementSibling)result[label]=headings[0].nextElementSibling.innerText.trim();
+          }return result;})(),"""
         return self.evaluate("""(()=>{
           const visible=x=>{
             const style=getComputedStyle(x),bounds=x.getBoundingClientRect();
@@ -426,7 +443,7 @@ class _EdgeContext:
           const controls=Array.from(document.querySelectorAll('a,button,[role=button],[role=menuitem]')).filter(visible);
           const caption=x=>(x.innerText||x.getAttribute('aria-label')||'').trim();
           return {url:location.href,ready_state:document.readyState,
-            page_busy:Array.from(document.querySelectorAll('[aria-busy=true]')).some(visible),"""+text_field+"""
+            page_busy:Array.from(document.querySelectorAll('[aria-busy=true]')).some(visible),"""+text_field+result_fields+"""
             challenge_visible:Array.from(document.querySelectorAll('iframe[src*="/recaptcha/"][src*="/bframe"],iframe[title*="challenge" i]')).some(visible),
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
@@ -698,6 +715,10 @@ class PortalBrowser:
             views=context.evidence_views(provider) if hasattr(type(context),'evidence_views') else [('Variantresultat',None)]
             for label,clip in views:
                 problem=self._capture_problem(provider,variant,context.snapshot() or {})
+                for _ in range(20):
+                    if not problem or problem[0]!='page_not_ready':break
+                    time.sleep(.25)
+                    problem=self._capture_problem(provider,variant,context.snapshot() or {})
                 if problem:return self._capture_error(updated,*problem)
                 path=root/(provider+'-'+uuid.uuid4().hex+'.png')
                 if clip is None:context.capture_png(path)
@@ -842,7 +863,7 @@ class PortalBrowser:
                 snapshot=context.snapshot() or {}
                 auth=self._record_status(provider,context,login_status(provider,snapshot))
                 result=parse_portal_snapshot(provider,variant,snapshot)
-                if result['status']=='found':return self._capture(provider,variant,context,result)
+                if result['status']=='found':return self._wait_capture(provider,variant,context,result)
                 if result['status']=='login_required':
                     if not login_attempted:
                         login_attempted=True

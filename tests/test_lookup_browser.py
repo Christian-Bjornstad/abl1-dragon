@@ -107,7 +107,7 @@ class PortalBrowserTests(unittest.TestCase):
                'text':'GRCh37\n9:g.133748283C>T\nOncogenicity\nOncogenic'}
         context=Mock();context.is_alive.return_value=True
         context.snapshot.side_effect=[{'url':'https://www.oncokb.org/login','password_visible':True},
-                                      {'url':'https://www.oncokb.org/','oncokb_account_visible':True},ready]
+                                      {'url':'https://www.oncokb.org/','oncokb_account_visible':True},ready,ready]
         browser=PortalBrowser(self.root,edge_browser=self.edge)
         with patch.object(browser,'_context',return_value=context),patch.object(browser,'_saved_login',return_value=True) as login,patch.object(browser,'_capture',side_effect=lambda p,v,c,r:r),patch('abl1_workstation.lookup_browser.time.sleep'):
             result=browser.lookup('oncokb',V)

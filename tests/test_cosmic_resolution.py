@@ -13,7 +13,7 @@ class CosmicResolutionTests(unittest.TestCase):
                 'MutationStrand':['+'],'GRChVer':['37'],'AccessionNumber':['NM_005157.6'],'PubmedPMID':['']}
         adapter=Mock();adapter.lookup.return_value={'status':'found','identity':canonical_identity(V),'identity_verified':True}
         with tempfile.TemporaryDirectory() as folder:
-            service=LookupService(folder,transport=Mock(return_value=json.dumps([1,['COSM12560'],fields]).encode()),browser_adapter=adapter)
+            service=LookupService(folder,transport=Mock(side_effect=lambda *a,**k:json.dumps([1,['COSM12560'],fields]).encode()),browser_adapter=adapter)
             self.assertEqual(service.lookup(V,['cosmic'],settings={'provider_modes':{'cosmic':'browser'}})[0]['status'],'found')
             settings=adapter.lookup.call_args.kwargs['settings']
             self.assertEqual(settings['cosmic_mutation_id'],'12560')

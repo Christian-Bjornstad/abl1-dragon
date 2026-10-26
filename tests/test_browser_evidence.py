@@ -1,6 +1,6 @@
 import base64,io,sys,tempfile,unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from PIL import Image,ImageDraw
 from abl1_workstation.lookup_browser import PortalBrowser,_EdgeContext,parse_portal_snapshot
@@ -16,6 +16,31 @@ def png_bytes(blank=False):
 
 
 class BrowserEvidenceTests(unittest.TestCase):
+    def test_oncokb_uses_scoped_mutation_tile_for_resistance_and_biological_effect(self):
+        page={'url':'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37',
+              'text':'GRCh37\n9:g.133748283C>T\nOncogenicity\nBiological Effect\nResistance\nLikely Gain-of-function\nClinical Implications for this Biomarker',
+              'oncokb_result_visible':True,'oncokb_fields':{'Oncogenicity':'Resistance','Biological Effect':'Likely Gain-of-function'}}
+        result=parse_portal_snapshot('oncokb',V,page)
+        self.assertEqual(result['status'],'found');self.assertEqual(result['classification'],'Resistance')
+        self.assertIn('Likely Gain-of-function',result['summary'])
+        page['oncokb_fields']={'Oncogenicity':'Unrecognized badge'}
+        self.assertEqual(parse_portal_snapshot('oncokb',V,page)['classification'],'')
+
+    def test_capture_waits_for_viewport_reflow_instead_of_losing_verified_picture(self):
+        class Page:
+            busy=False;checks=0
+            def snapshot(self):
+                self.checks+=1
+                return {**PAGE,'page_busy':self.busy and self.checks==2}
+            def evidence_views(self,provider):
+                self.busy=True
+                yield 'Variant overview',None
+            def capture_png(self,path,**options):Path(path).write_bytes(png_bytes())
+        with tempfile.TemporaryDirectory() as folder:
+            browser=PortalBrowser(folder)
+            with patch('abl1_workstation.lookup_browser.time.sleep'):
+                result=browser._capture('franklin',V,Page(),parse_portal_snapshot('franklin',V,PAGE))
+            self.assertIn('screenshot',result);browser.close()
     def test_each_view_is_captured_checked_and_labelled_and_partial_images_are_kept(self):
         class Page:
             def snapshot(self):return PAGE
