@@ -16,6 +16,13 @@ def png_bytes(blank=False):
 
 
 class BrowserEvidenceTests(unittest.TestCase):
+    def test_gnomad_loading_header_is_not_a_finished_evidence_page(self):
+        v={'assembly':'GRCh37','chrom':'1','pos':55516888,'ref':'G','alt':'A'}
+        page={'url':'https://gnomad.broadinstitute.org/variant/1-55516888-G-A?dataset=gnomad_r2_1',
+              'text':'SNV: 1-55516888-G-A (GRCh37)\nLoading variant...','ready_state':'complete'}
+        self.assertEqual(PortalBrowser._capture_problem('gnomad',v,page)[0],'page_not_ready')
+        page['text']='SNV: 1-55516888-G-A (GRCh37)\nPopulation Frequencies\nAllele Count\nAllele Number\n8\n128230'
+        self.assertIsNone(PortalBrowser._capture_problem('gnomad',v,page))
     def test_finished_picture_receipt_survives_interruption_before_remaining_views(self):
         from abl1_workstation.evidence_store import EvidenceStore
         class Page:

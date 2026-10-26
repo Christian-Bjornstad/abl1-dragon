@@ -761,6 +761,9 @@ class PortalBrowser:
             return 'login_required','Logg inn i appens Edge-vindu, åpne variantresultatet og velg «Hent bilder fra åpne sider».'
         if snapshot.get('ready_state','complete')!='complete' or snapshot.get('page_busy') is True:
             return 'page_not_ready','Databasesiden er ikke ferdig lastet. Vent og velg «Hent bilder fra åpne sider».'
+        if provider=='gnomad' and (re.search(r'^\s*Loading variant(?:\.{3}|…)?\s*$',text,re.I|re.M)
+                                  or not re.search(r'Allele (?:Count|Number|Frequency)|Population Frequencies',text,re.I)):
+            return 'page_not_ready','gnomAD laster fortsatt variantinnholdet. Vent og hent bildene igjen.'
         valid=(cls._public_identity(provider,variant,snapshot) if provider in PUBLIC_HOSTS
                else parse_portal_snapshot(provider,variant,snapshot).get('identity_verified') is True)
         if not valid:return 'identity_mismatch','Siden bekrefter ikke valgt GRCh37-allel. Åpne riktig variant og velg «Hent bilder fra åpne sider».'
