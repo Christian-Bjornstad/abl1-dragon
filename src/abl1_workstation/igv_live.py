@@ -441,15 +441,19 @@ def inspect_alignment(alignment):
 
 class _ReferenceSignals(QObject):
     finished = pyqtSignal(int, object, object)
+    edge_finished = pyqtSignal(int, object, object)
 
 
 class LiveIgvWidget(QWidget):
     """View the selected run's exact alignment, after local reference validation."""
     message=pyqtSignal(str)
 
-    def __init__(self, parent=None, *, enable_webengine=True):
+    def __init__(self, parent=None, *, enable_webengine=True, edge_data_dir=None):
         super().__init__(parent)
         self.enable_webengine = enable_webengine
+        self.edge_data_dir=Path(edge_data_dir) if edge_data_dir is not None else None
+        self._prefer_edge=os.name=='nt' and self.edge_data_dir is not None
+        self.edge_viewer=None
         self.server = None
         self.current_alignment = None
         self.reference_md5 = None
@@ -458,6 +462,7 @@ class LiveIgvWidget(QWidget):
         self._cancel = threading.Event()
         self._signals = _ReferenceSignals(self)
         self._signals.finished.connect(self._reference_finished)
+        self._signals.edge_finished.connect(self._edge_finished)
         self._pending = None
         self.status_label = QLabel('Velg en variant med BAM eller CRAM.')
         self.status_label.setWordWrap(True)
@@ -481,6 +486,8 @@ class LiveIgvWidget(QWidget):
         self.current_alignment = None
         self.reference_md5 = None
         self.save_image_button.setEnabled(False)
+        if self.edge_viewer is not None:
+            self.edge_viewer.close();self.edge_viewer=None
         self.empty_space.show()
         if self.web_view is not None:
             self.web_view.stop()
@@ -508,7 +515,7 @@ class LiveIgvWidget(QWidget):
             reference = inspect_reference(reference_fasta)
             if variant and variant.get('sample') and str(variant['sample']) != str(alignment.sample):
                 raise ValueError('Valgt variant og alignment tilhører ulike prøver')
-            if not self._create_webengine():
+            if not self._prefer_edge and not self._create_webengine():
                 return
         except ValueError as error:
             self.status_label.setText(str(error))
@@ -570,6 +577,9 @@ class LiveIgvWidget(QWidget):
         self.reference_md5 = result[1]
         self.message.emit('IGV: hg19 chr9 og alignment-header kontrollert. Laster lokal visningsside.')
         self.status_label.setText(f'{alignment.sample} · {locus} · hg19 MD5 kontrollert')
+        if self._prefer_edge:
+            self._open_edge()
+            return
         self.empty_space.hide()
         self.web_view.show()
         try:self._load_viewer()
@@ -586,6 +596,37 @@ class LiveIgvWidget(QWidget):
         else:raw=resource
         if len(raw)>256*1024:raise ValueError('IGV-visningssiden er for stor.')
         self.web_view.setHtml(raw.decode('utf-8-sig'),QUrl(self.server.url('viewer.html')))
+
+    def _open_edge(self):
+        from .igv_edge import EdgeIgv
+        generation,cancel,server,signals=self._generation,self._cancel,self.server,self._signals
+        folder=self.edge_data_dir
+        if folder is None:
+            from PyQt6.QtCore import QStandardPaths
+            folder=Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+        self.status_label.setText('Åpner lokal IGV i Microsoft Edge …')
+        self.message.emit('IGV: åpner Microsoft Edge med lokal referanse og lesninger.')
+        def open_view():
+            viewer=EdgeIgv(folder)
+            try:
+                viewer.open(server,cancel)
+                if cancel.is_set():viewer.close();return
+                signals.edge_finished.emit(generation,viewer,None)
+            except (OSError,RuntimeError,ValueError,InterruptedError) as error:
+                viewer.close()
+                try:signals.edge_finished.emit(generation,None,str(error) or 'Avbrutt')
+                except RuntimeError:pass
+        threading.Thread(target=open_view,daemon=True,name='igv-edge').start()
+
+    def _edge_finished(self,generation,viewer,error):
+        if generation!=self._generation:
+            if viewer is not None:viewer.close()
+            return
+        if error:
+            self.status_label.setText(error);self.message.emit('IGV: '+error);return
+        self.edge_viewer=viewer;self.save_image_button.setEnabled(True)
+        self.status_label.setText('IGV er åpen i Microsoft Edge. Standardzoom og bildeuttak er tilgjengelig.')
+        self.message.emit('IGV klar i Microsoft Edge.')
 
     def _create_webengine(self):
         if self.web_view is not None:
@@ -673,9 +714,11 @@ class LiveIgvWidget(QWidget):
         message=f'IGV: nettleserprosessen stoppet ({status.name}, kode {code}).'
         self.status_label.setText(message+' Start DRAGEN i et nytt Python FELLES-vindu.')
         self.message.emit(message)
+        if code==18 and os.name=='nt' and not self._prefer_edge:
+            self._prefer_edge=True;self._open_edge()
 
     def _save_image(self):
-        if self.server is None or self.web_view is None or not self.save_image_button.isEnabled():
+        if self.server is None or not self.save_image_button.isEnabled():
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Lagre IGV-bilde', 'IGV.png', 'PNG (*.png)')
         if path:
@@ -684,7 +727,7 @@ class LiveIgvWidget(QWidget):
     def capture_png(self,path,callback):
         """Capture all rendered tracks; callback is scoped to this exact load."""
         generation=self._generation
-        if not self.server or not self.web_view or not self.save_image_button.isEnabled():
+        if not self.server or not self.save_image_button.isEnabled() or not (self.web_view or self.edge_viewer):
             callback(None,'IGV er ikke ferdig lastet.');return
         def render(svg):
             if generation!=self._generation:callback(None,'Valgt variant ble endret.');return
@@ -700,7 +743,10 @@ class LiveIgvWidget(QWidget):
                 if not image.save(str(path),'PNG'):raise ValueError('IGV-bildet kunne ikke lagres.')
                 callback(str(path),None)
             except (ValueError,RuntimeError) as error:callback(None,str(error))
-        self.web_page.runJavaScript('window.dragonBrowser ? window.dragonBrowser.toSVG() : null',render)
+        if self.edge_viewer is not None:
+            try:render(self.edge_viewer.svg())
+            except (OSError,RuntimeError,ValueError) as error:callback(None,str(error))
+        else:self.web_page.runJavaScript('window.dragonBrowser ? window.dragonBrowser.toSVG() : null',render)
 
     def shutdown(self):
         self.clear()

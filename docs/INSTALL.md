@@ -21,6 +21,12 @@ ut i `reference/hg19`; appen velger den automatisk. Ingen separat nedlasting av
 referanse eller IGV.js er nødvendig. Ved første start kontrolleres og eventuelt
 repareres den lokale referansekopien fra den medfølgende pakken.
 
+På Windows bruker IGV eksisterende **Microsoft Edge (`msedge.exe`)** i et eget
+appstyrt vindu. Referanse og lesninger leveres bare på lokal loopback.
+Appen bruker Edge DevTools til å kontrollere lasting og hente IGV-bildet til
+Excel. Standardinstallasjonen trenger ikke PyQt6-WebEngine eller en ekstra
+`QtWebEngineProcess.exe`. Organisasjonens Edge-policyer respekteres.
+
 ## Samme startmønster som PRONTO
 
 De to CMD-filene inneholder hele valget av interpreter. De bruker `install.py` og

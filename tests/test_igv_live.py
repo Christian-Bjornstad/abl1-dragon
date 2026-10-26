@@ -246,6 +246,19 @@ class AlignmentHeaderTests(unittest.TestCase):
 
 
 class NativeViewerTests(unittest.TestCase):
+    def test_windows_edge_route_does_not_create_qt_webengine(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp:
+            widget=LiveIgvWidget(edge_data_dir=temp)
+            widget._prefer_edge=True
+            widget.server=LoopbackFileServer({'viewer.html':b'<html></html>'}).start()
+            viewer=Mock();widget._edge_finished(widget._generation,viewer,None)
+            self.assertIsNone(widget.web_view);self.assertTrue(widget.save_image_button.isEnabled())
+            self.assertIn('Microsoft Edge',widget.status_label.text())
+            widget.clear();viewer.close.assert_called_once()
+            self.assertIsNone(widget.edge_viewer);self.assertFalse(widget.save_image_button.isEnabled())
+            widget.close()
+
     def test_viewer_document_uses_registered_html_instead_of_http_navigation(self):
         from unittest.mock import Mock
         widget=LiveIgvWidget(enable_webengine=False)

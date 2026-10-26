@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(analysis)
         igv_page=QWidget();igv_layout=QVBoxLayout(igv_page);igv_layout.setContentsMargins(0,0,0,0)
         igv_layout.addWidget(label('IGV','PageTitle'));self.igv_title=label('Ingen variant valgt','CardTitle');igv_layout.addWidget(self.igv_title)
-        self.read_viewer=LiveIgvWidget(enable_webengine=self.browser_enabled)
+        self.read_viewer=LiveIgvWidget(enable_webengine=self.browser_enabled,edge_data_dir=self.store.path.parent)
         self.read_viewer.message.connect(self.log_event);igv_layout.addWidget(self.read_viewer,1)
         self.pages.addWidget(igv_page)
         self.settings_panel=SettingsPanel(self.settings,self.database_browser)
