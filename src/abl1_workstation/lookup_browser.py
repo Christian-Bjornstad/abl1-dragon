@@ -199,8 +199,7 @@ def parse_portal_snapshot(provider,variant,snapshot):
         if re.fullmatch(r'(?:Likely )?(?:Gain-of-function|Loss-of-function|Switch-of-function|Neutral|Inconclusive|Unknown)',effect,re.I):biological_effect=effect
     readable_page=(provider=='oncokb' and snapshot.get('oncokb_result_visible') is True
                    and 'Clinical Implications for this Biomarker' in text)
-    readable_page=readable_page or (provider=='franklin' and snapshot.get('franklin_result_visible') is True
-                                  and 'Somatic Clinical Evidence' in text and 'AMP Classification' in text)
+    readable_page=readable_page or (provider=='franklin' and 'Somatic Clinical Evidence' in text and 'AMP Classification' in text)
     if provider!='cosmic' and not classifications and not readable_page:return result
     levels=_labelled_levels(text)
     excerpt=[label+': '+value for label,value in classifications+levels]
@@ -485,6 +484,14 @@ class _EdgeContext:
         from .browser_evidence import evidence_views
         return evidence_views(self,provider)
 
+    def start_franklin_query(self,variant):
+        from .franklin_search import start_query
+        return start_query(self,variant)
+
+    def resolve_franklin_option(self):
+        from .franklin_search import resolve_option
+        return resolve_option(self)
+
     def capture_png(self,path,*,clip=None):
         import io,math
         from PIL import Image,ImageStat
@@ -731,6 +738,8 @@ class PortalBrowser:
                 records.append({'label':str(label),'path':str(path),'url':snapshot.get('url',''),'captured_at':captured})
                 updated={**updated,'screenshot':records[0]['path'],'screenshots':list(records),'captured_at':captured,'identity_verified':True}
                 path=None
+                from .evidence_store import EvidenceStore
+                EvidenceStore(self.data_dir).save(variant,{'provider':provider,'checked_at':captured,**updated})
             updated.pop('screenshot_error',None);updated.pop('screenshot_reason',None)
             return updated
         except (OSError,ValueError,RuntimeError,TimeoutError):
@@ -853,27 +862,32 @@ class PortalBrowser:
         with self._locks[provider]:
             context=self._context(provider)
             if provider=='franklin':
-                v=canonical_identity(variant)
-                url=f"https://franklin.genoox.com/clinical-db/variant/snp/chr{v['chrom']}-{v['pos']}-{v['ref']}-{v['alt']}"
+                url='https://franklin.genoox.com/clinical-db/home'
             elif provider=='oncokb':url='https://www.oncokb.org/hgvsg/'+quote(genomic_hgvs(variant),safe=':>')+'?refGenome=GRCh37'
             else:
                 mutation_id=str(settings.get('cosmic_mutation_id') or '')
                 url=('https://grch37-cancer.sanger.ac.uk/cosmic/mutation/overview?id='+mutation_id if re.fullmatch(r'[0-9]+',mutation_id)
                      else 'https://grch37-cancer.sanger.ac.uk/cosmic/search?q='+quote('ABL1 '+str(variant.get('cdna',''))))
             context.navigate(url)
-            timeout=min(max(float(settings.get('browser_timeout_seconds',30)),5),90)
-            deadline=time.monotonic()+timeout;result=None;login_attempted=False;query_retried=False
+            timeout=min(max(float(settings.get('browser_timeout_seconds',45 if provider=='franklin' else 30)),5),90)
+            deadline=time.monotonic()+timeout;result=None;login_attempted=False;query_retried=False;franklin_submitted=False
             while time.monotonic()<deadline:
                 snapshot=context.snapshot() or {}
                 auth=self._record_status(provider,context,login_status(provider,snapshot))
+                if provider=='franklin' and not _manual_check(snapshot) and not snapshot.get('password_visible'):
+                    if snapshot.get('franklin_search') and not franklin_submitted and hasattr(context,'start_franklin_query'):
+                        franklin_submitted=context.start_franklin_query(variant)
+                        time.sleep(.3);continue
+                    if franklin_submitted and '/variant/' not in snapshot.get('url','') and hasattr(context,'resolve_franklin_option'):
+                        if context.resolve_franklin_option():time.sleep(.3);continue
                 result=parse_portal_snapshot(provider,variant,snapshot)
                 if result['status']=='found':return self._wait_capture(provider,variant,context,result)
                 if result['status']=='login_required':
                     if not login_attempted:
-                        login_attempted=True
+                        login_attempted=True;franklin_submitted=False
                         if not self._saved_login(provider,context):return result
                     time.sleep(.5);continue
-                if login_attempted and not query_retried and auth.get('status')=='logged_in':
+                if provider!='franklin' and login_attempted and not query_retried and auth.get('status')=='logged_in':
                     context.navigate(url);query_retried=True;time.sleep(.5);continue
                 if result['status'] in {'not_found','license_required'}:return result
                 if provider=='cosmic' and hasattr(context,'evaluate'):

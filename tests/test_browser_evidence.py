@@ -16,6 +16,20 @@ def png_bytes(blank=False):
 
 
 class BrowserEvidenceTests(unittest.TestCase):
+    def test_finished_picture_receipt_survives_interruption_before_remaining_views(self):
+        from abl1_workstation.evidence_store import EvidenceStore
+        class Page:
+            def snapshot(self):return PAGE
+            def evidence_views(self,provider):
+                yield 'Overview',None
+                raise KeyboardInterrupt('simulated process interruption')
+            def capture_png(self,path,**options):Path(path).write_bytes(png_bytes())
+        with tempfile.TemporaryDirectory() as folder:
+            browser=PortalBrowser(folder)
+            with self.assertRaises(KeyboardInterrupt):browser._capture('franklin',V,Page(),parse_portal_snapshot('franklin',V,PAGE))
+            saved=EvidenceStore(folder).load(V)[0]
+            self.assertEqual(saved['provider'],'franklin');self.assertTrue(Path(saved['screenshot']).is_file())
+            browser.close()
     def test_oncokb_uses_scoped_mutation_tile_for_resistance_and_biological_effect(self):
         page={'url':'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37',
               'text':'GRCh37\n9:g.133748283C>T\nOncogenicity\nBiological Effect\nResistance\nLikely Gain-of-function\nClinical Implications for this Biomarker',

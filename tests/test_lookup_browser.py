@@ -101,6 +101,20 @@ class FakeEdge:
 
 
 class PortalBrowserTests(unittest.TestCase):
+    def test_franklin_search_uses_home_build_and_somatic_controls_before_result_capture(self):
+        from unittest.mock import Mock
+        ready={'url':'https://franklin.genoox.com/clinical-db/variant/snpTumor/chr9-133748283-C-T',
+               'text':'hg19 chr9-133748283-C-T\nSuggested classification\nPathogenic'}
+        context=Mock();context.is_alive.return_value=True
+        context.snapshot.side_effect=[{'url':'https://franklin.genoox.com/clinical-db/home','franklin_search':True},ready,ready]
+        context.start_franklin_query.return_value=True
+        browser=PortalBrowser(self.root,edge_browser=self.edge)
+        with patch.object(browser,'_context',return_value=context),patch.object(browser,'_capture',side_effect=lambda p,v,c,r:r),patch('abl1_workstation.lookup_browser.time.sleep'):
+            result=browser.lookup('franklin',V)
+        self.assertEqual(result['status'],'found')
+        self.assertEqual(context.navigate.call_args.args[0],'https://franklin.genoox.com/clinical-db/home')
+        context.start_franklin_query.assert_called_once_with(V);browser.close()
+
     def test_lookup_reuses_saved_login_then_retries_exact_query_once(self):
         from unittest.mock import Mock
         ready={'url':'https://www.oncokb.org/hgvsg/9:g.133748283C%3ET?refGenome=GRCh37',
