@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from abl1_workstation.lookup import canonical_identity
-from abl1_workstation.lookup_browser import PortalBrowser, parse_portal_snapshot, login_status, _WebSocketConnection, _BrowserConnectionClosed, _EdgeContext, _owned_endpoint, _initial_target
+from abl1_workstation.lookup_browser import PortalBrowser, parse_portal_snapshot, login_status, _WebSocketConnection, _BrowserConnectionClosed, _EdgeContext, _owned_endpoint, _initial_target, _acquire_profile_lease
 
 V={'assembly':'GRCh37','chrom':'9','pos':133748283,'ref':'C','alt':'T','cdna':'c.944C>T','protein_snv_alone':'p.T315I'}
 
@@ -305,7 +305,9 @@ class PortalBrowserTests(unittest.TestCase):
         profile=self.root/'PortalProfiler/franklin'
         with patch('abl1_workstation.lookup_browser.subprocess.Popen',side_effect=launch):
             with self.assertRaisesRegex(RuntimeError,'23'):_EdgeContext(self.edge.path,profile)
-        self.assertFalse((profile/'.abl1-portal.lock').exists())
+        # OS lease is released after failure; keep the inode to prevent two
+        # processes from locking separate files during a close/reopen race.
+        lease=_acquire_profile_lease(profile);lease.close()
         log=self.root/'work/launcher-logs/edge-startup.log'
         self.assertIn('synthetic startup diagnostic',log.read_text(encoding='utf-8'))
 

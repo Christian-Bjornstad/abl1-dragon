@@ -22,5 +22,13 @@ Referansesekvensen og koordinatkartet gjelder GRCh37/hg19 og NM_005157.6,
 fra offentlige referanser. Kildeadresser er angitt i `engine/reference.json`.
 Demoen og alle medfølgende testtilfeller er syntetiske.
 
+`assets/reference/chr9.fa.gz` og `chr9.fa.fai` inneholder hele offentlige
+[UCSC hg19 chr9](https://hgdownload.soe.ucsc.edu/goldenPath/hg19/chromosomes/chr9.fa.gz),
+141 213 431 baser. Sekvensen er komprimert på nytt uten endringer i FASTA-innholdet.
+Sekvens-MD5: `3e273117f15e0a400f01055d9f393768`. SHA-256 for arkiv,
+utpakket FASTA og indeks står i `assets/reference/manifest.json`.
+Dette er human referansesekvens, uten pasient- eller analysedata.
+Pakken kan bygges på nytt fra en lokal FASTA med `scripts/bundle_chr9.py`.
+
 IGV.js 3.8.9 distribueres lokalt med MIT-lisens. Lisens og kildeproveniens
 følger `assets/igv`. [IGV.js](https://github.com/igvteam/igv.js).

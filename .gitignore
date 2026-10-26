@@ -29,7 +29,9 @@ reports/
 *.fastq*
 *.fq*
 *.fai
+!assets/reference/chr9.fa.fai
 reference/
+!assets/reference/
 *.bai
 *.crai
 *.xlsx

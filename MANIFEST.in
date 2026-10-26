@@ -2,6 +2,7 @@ include LICENSE README.md requirements-desktop.txt start_abl1.py start.py instal
 include *.cmd
 recursive-include packaging *.py *.cmd *.md
 include assets/brand/abl1-dragon.png assets/brand/abl1-dragon.ico
+recursive-include assets/reference *.gz *.fai *.json
 recursive-include assets/igv *.js *.html *.txt *.json *.bed
 include desktop/data/pilot.json
 include engine/analyze.py engine/read_evidence.py engine/reference.json engine/requirements-read-evidence.txt

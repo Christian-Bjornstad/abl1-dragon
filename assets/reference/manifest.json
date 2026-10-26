@@ -1,0 +1,12 @@
+{
+  "assembly": "GRCh37",
+  "chromosome": "chr9",
+  "length": 141213431,
+  "sequence_md5": "3e273117f15e0a400f01055d9f393768",
+  "fasta_bytes": 144037706,
+  "fasta_sha256": "f177a1396ed549186ea5490e3e115292257bce6a66325fe5120f0705a5ba2805",
+  "gzip_sha256": "a441a18c74f11458e291b3b2e2f2d8746f864151ed643d969b11243c6575eb11",
+  "index_sha256": "b28004c1248be4e0899ff213c88d18c9c88cde389834b251afd854ed81c3b14f",
+  "source_url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/chromosomes/chr9.fa.gz",
+  "privacy": "Public reference only; no individual sequence or assay data."
+}

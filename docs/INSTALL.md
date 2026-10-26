@@ -16,6 +16,11 @@ Installasjonen er ferdig når Python FELLES viser **DRAGEN ER FERDIG INSTALLERT*
 tydelig ramme. Meldingen vises etter kontroll av pakkeversjonene, også hvis riktig
 installasjon allerede finnes. Ved feil vises ingen ferdigmelding.
 
+Hele hg19 chr9-referansen og `.fai` følger kildekoden. Installasjonen pakker FASTA
+ut i `reference/hg19`; appen velger den automatisk. Ingen separat nedlasting av
+referanse eller IGV.js er nødvendig. Ved første start kontrolleres og eventuelt
+repareres den lokale referansekopien fra den medfølgende pakken.
+
 ## Samme startmønster som PRONTO
 
 De to CMD-filene inneholder hele valget av interpreter. De bruker `install.py` og

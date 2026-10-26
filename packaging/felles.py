@@ -211,7 +211,12 @@ def activate(root=ROOT):
     return project
 
 
-def _installation_finished():
+def _installation_finished(root):
+    helper=Path(root)/'src/abl1_workstation/reference_bundle.py'
+    if helper.is_file():
+        print('Klargjør medfølgende hg19 chr9-referanse …',flush=True)
+        prepared=runpy.run_path(str(helper))['bundled_reference'](root)
+        if prepared:print('chr9 FASTA og indeks er klare. Ingen referansenedlasting kreves.',flush=True)
     print('\n'+'='*48)
     print('DRAGEN ER FERDIG INSTALLERT')
     print('Alle pakkeversjoner er kontrollert.')
@@ -235,7 +240,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
         if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
-            _installation_finished();return 0
+            _installation_finished(root);return 0
         print('Reparerer DRAGENs lokale pakker; eksisterende mappe bevares som sikkerhetskopi.')
     target.parent.mkdir(parents=True,exist_ok=True)
     temporary=Path(tempfile.mkdtemp(prefix=target.name+'.installing-',dir=target.parent))
@@ -265,7 +270,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
             raise
     except Exception:
         print('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT. Se feilen nedenfor.');raise
-    _installation_finished()
+    _installation_finished(root)
     return 0
 
 

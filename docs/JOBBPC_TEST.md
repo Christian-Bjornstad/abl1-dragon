@@ -14,10 +14,12 @@ Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal
 
 - Programmet starter tomt. Velg analysemappen og kontroller prøvenavn og antall kall.
 - Bytt mellom **PASS + kandidater**, **PASS**, **Kandidater** og **Alle**.
-- Velg lokal GRCh37 FASTA i **Innstillinger** ved behov. Kontroller IGV for en prøve med indeks.
+- Kontroller at **Innstillinger** har valgt medfølgende `reference/hg19/chr9.fa` automatisk. Kontroller IGV for en prøve med indeks, også uten nettilgang.
 - Velg en variant og bruk **Søk i databaser**. Kontroller at treff og manglende tilgang skilles.
 - Merk to varianter og eksporter Excel. Arbeidsboken skal ha ett ark per merket prøve/variant, med proteinvariant som navn og uten oversiktsark. Kontroller riktig prøve, AF/DP og IGV-bilde i hvert ark. Manglende bilder eller tilgang skal angis.
 - Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
+- Lukk appens databasevindu og åpne det på nytt fra **Innstillinger**. Andre databaseøkter skal beholde sin innloggingsstatus.
+- Etter innlogging eller manuell nettleserkontroll: vis riktig variant i databasevinduet og bruk **Hent bilder fra åpne sider**. Kontroller at kildestatus viser **bilde klart**, og at bildet følger med i Excel.
 - Kontroller jobbkonto og Microsoft-synk. Edge kan automatisk koble en Windows-konto
   til en ny profilmappe; egen mappe alene bekrefter ikke at synk er avslått.
 

@@ -31,6 +31,10 @@ class Settings:
                     if isinstance(providers,list):self.providers=[p for p in providers if p in HOMES]
                     if isinstance(data.get('reference'),str):self.reference=data['reference'] or self.reference
         except (OSError,ValueError,TypeError):pass
+        if not self.reference or not Path(self.reference).is_file() or not Path(self.reference+'.fai').is_file():
+            from .reference_bundle import bundled_reference
+            prepared=bundled_reference(resource_root(),folder)
+            if prepared:self.reference=str(prepared)
 
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)

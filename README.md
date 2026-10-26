@@ -1,7 +1,19 @@
-# DRAGEN
+<p align="center">
+  <img src="assets/brand/abl1-dragon.png" width="140" alt="DRAGEN – drage og DNA">
+</p>
 
-Python-app for gjennomgang av BCR::ABL1-varianter fra DRAGEN amplicon.
-Mappeimport, variantutvalg, lokal IGV, databaseoppslag og Excel med ett ark per variant.
+<h1 align="center">DRAGEN</h1>
+
+<p align="center">BCR::ABL1-varianter fra DRAGEN amplicon · IGV · databaseoppslag · Excel</p>
+
+<p align="center">
+  <a href="https://github.com/Christian-Bjornstad/abl1-dragon/actions/workflows/tests.yml"><img src="https://github.com/Christian-Bjornstad/abl1-dragon/actions/workflows/tests.yml/badge.svg" alt="Tester"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-78718c" alt="Windows 10 og 11">
+  <img src="https://img.shields.io/badge/Python-3.12–3.14-7958a5" alt="Python 3.12 til 3.14">
+</p>
+
+Python-app for mappeimport, gjennomgang av varianter og Excel-rapport med ett ark per valgt prøve/variant.
+Analysefiler og IGV behandles lokalt. Offentlig hg19 chr9-referanse og IGV.js følger kildekoden.
 
 ## Start på Windows
 
@@ -28,9 +40,10 @@ Alle opprinnelige kall finnes under **Alle**. Kryss av variantene som skal søke
 Velg variant og åpne **IGV** i venstremenyen. Lesningsvisningen bruker hele
 hovedflaten, med standardzoom og 200 bp-oversikt. Dekning, grå lesninger med baseavvik,
 referansesekvens og NM_005157.6 gen-/proteinspor vises lokalt.
-Analysesiden har en hendelseslogg. GRCh37/hg19 FASTA med .fai velges i
-**Innstillinger** dersom den ikke finnes i analysemappen. Referansen
-kontrolleres mot hg19 chr9 før lesningene vises.
+Analysesiden har en hendelseslogg. Medfølgende `chr9.fa.gz` og `.fai` klargjøres
+automatisk under installasjon eller første start. IGV trenger ingen referansenedlasting.
+En annen GRCh37/hg19 FASTA kan velges i **Innstillinger**.
+Referansen kontrolleres mot hg19 chr9 før lesningene vises.
 
 **Søk i databaser** slår opp merkede alleler. Samme allel i flere prøver søkes én gang.
 Kort kildestatus vises under variantlisten. Innstillinger samler kildevalg og innlogging.
@@ -45,7 +58,11 @@ uten oversiktsark. AF, ALT/DP, FILTER, kildeinformasjon og tilgjengelige kildebi
 Et standardbilde av riktig prøves IGV tas automatisk for hver variant under eksporten.
 Ulike prøver med samme proteinvariant får egne ark. Manglende bilde/tilgang angis i arket.
 Databasebilder tas bare når nettsiden bekrefter riktig allel; et treff i tekst alene er
-ikke tilstrekkelig. MTBP-innlogging støttes, men automatisk MTBP-analyse er ikke implementert.
+ikke tilstrekkelig. Kildestatus viser om bildet er klart. Etter innlogging eller
+nettleserkontroll: velg varianten og trykk **Hent bilder fra åpne sider**.
+Knappen bruker de åpne databasesidene uten å starte søket på nytt.
+Databaseoppslag krever nett og eventuell konto/tilgang.
+MTBP-innlogging støttes, men automatisk MTBP-analyse er ikke implementert.
 Ingen ekstern rapport opprettes eller slettes av MTBP-adapteren.
 
 Annotasjon bruker GRCh37/hg19 og NM_005157.6. PASS er caller-status.

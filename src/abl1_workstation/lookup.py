@@ -155,7 +155,7 @@ class LookupService:
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)
         if data['status']=='found' and canonical_identity(data.get('identity') or {})!=identity:raise ValueError('Nettlesertreffets allel er ikke kontrollert.')
-        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshot_error'}
+        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshot_error','screenshot_reason'}
         return self._result(provider,identity,data['status'],str(data.get('summary','')),**{k:value for k,value in data.items() if k in allowed and k!='summary'})
 
     def _clinvar(self,v,tokens,settings):

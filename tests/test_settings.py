@@ -19,7 +19,9 @@ class SettingsTests(unittest.TestCase):
     def test_only_non_secret_settings_survive_restart(self):
         with tempfile.TemporaryDirectory() as folder:
             settings=Settings(folder);settings.tokens={'franklin':'SECRET_TEST_TOKEN'}
-            settings.providers=['clinvar','franklin'];settings.reference='D:/reference/chr9.fa'
+            reference=Path(folder)/'custom.fa';reference.write_text('>chr9\nA\n')
+            Path(str(reference)+'.fai').write_text('chr9\t1\t6\t1\t2\n')
+            settings.providers=['clinvar','franklin'];settings.reference=str(reference)
             settings.save()
             self.assertNotIn('SECRET_TEST_TOKEN',settings.path.read_text())
             restored=Settings(folder);self.assertFalse(hasattr(restored,'tokens'))

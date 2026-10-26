@@ -111,6 +111,10 @@ class MainWindow(QMainWindow):
         self.variant_info=label('','Subtitle');detail_layout.addWidget(self.variant_info)
         self.source_states=QWidget();self.source_layout=QGridLayout(self.source_states);self.source_layout.setContentsMargins(0,0,0,0)
         self.source_badges={};detail_layout.addWidget(self.source_states)
+        image_actions=QHBoxLayout()
+        self.retry_images_button=button('Hent bilder fra åpne sider',self.retry_database_images)
+        self.retry_images_button.setToolTip('For valgt variant: fullfør innlogging eller nettleserkontroll i Edge og hent bildet uten nytt søk.')
+        image_actions.addWidget(self.retry_images_button);image_actions.addStretch();detail_layout.addLayout(image_actions)
         detail_layout.addWidget(label('Logg','CardTitle'))
         self.event_log=QPlainTextEdit();self.event_log.setReadOnly(True);self.event_log.setMaximumBlockCount(500)
         self.event_log.setAccessibleName('Hendelseslogg');detail_layout.addWidget(self.event_log,1)
@@ -259,6 +263,19 @@ class MainWindow(QMainWindow):
         for item in results:
             state={'found':'treff','not_found':'ingen treff','login_required':'innlogging kreves','license_required':'tilgang kreves','unsupported':'ikke tilgjengelig','error':'feil'}.get(item.get('status'),'ukjent status')
             self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+': '+state+'.')
+            if item.get('screenshot_error'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde: '+str(item['screenshot_error']))
+            elif item.get('screenshot'):self.log_event(PROVIDER_NAMES.get(item['provider'],item['provider'])+' · bilde lagret.')
+        self._update_actions()
+
+    def retry_database_images(self):
+        if self.loading or self.current_variant is None or not hasattr(self.database_browser,'recapture_result'):return
+        variant=dict(self.current_variant);key=allele_key(variant)
+        results=[dict(item) for item in self.lookup_results.get(key,[])]
+        if not results:return
+        def operation():
+            return key,[self.database_browser.recapture_result(item['provider'],variant,item)
+                        if item.get('status') in ('found','login_required','error') else item for item in results]
+        self._start_task(operation,self._lookup_finished,'Henter bilder fra åpne databasesider for '+str(variant.get('protein_snv_alone') or variant['pos'])+' …')
 
     def _render_sources(self):
         while self.source_layout.count():
@@ -273,8 +290,9 @@ class MainWindow(QMainWindow):
         for i,provider in enumerate(self.settings.providers):
             result=by_provider.get(provider,{})
             state=states.get(result.get('status'),'Ikke søkt')
+            if result.get('status')=='found':state+=' · bilde klart' if result.get('screenshot') else ' · bilde mangler'
             badge=label(PROVIDER_NAMES.get(provider,provider)+' · '+state,'SourceBadge')
-            badge.setToolTip('Kontrollert: '+str(result.get('checked_at','')) if result else '')
+            badge.setToolTip(('Kontrollert: '+str(result.get('checked_at',''))+'\n'+str(result.get('screenshot_error') or result.get('summary') or '')).strip() if result else '')
             badge.setProperty('found',result.get('status')=='found')
             self.source_badges[provider]=badge;self.source_layout.addWidget(badge,i//3,i%3)
 
@@ -362,6 +380,7 @@ class MainWindow(QMainWindow):
         self.lookup_button.setText(f'Søk i databaser ({count})' if count else 'Søk i databaser')
         self.excel_button.setEnabled(bool(count) and not busy)
         self.lookup_button.setEnabled(bool(count) and bool(self.settings.providers) and not busy)
+        self.retry_images_button.setEnabled(self.current_variant is not None and bool(self.lookup_results.get(allele_key(self.current_variant),[])) and not busy)
         for control in (self.variant_table,self.sample_filter,self.status_filter,self.search,self.mark_visible_button,self.clear_marks_button):control.setEnabled(not busy)
 
     def _error(self,message):

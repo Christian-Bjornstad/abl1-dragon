@@ -58,6 +58,15 @@ class PublicWindowTests(unittest.TestCase):
         w=self.window;w._apply_session(load_pilot())
         w.lookup_results['old']=[{'status':'found'}];w._apply_session(load_pilot())
         self.assertEqual(w.lookup_results,{})
+    def test_missing_database_picture_is_visible_with_retry_action(self):
+        w=self.window;w._apply_session(load_pilot());w.select_variant('DEMO-A',133748283)
+        v=w.current_variant
+        w._lookup_finished((allele_key(v),[{'provider':'clinvar','status':'found','summary':'Synthetic result',
+            'screenshot_error':'Fullfør nettleserkontrollen i Edge.'}]))
+        self.assertIn('bilde mangler',w.source_badges['clinvar'].text())
+        self.assertIn('nettleserkontrollen',w.source_badges['clinvar'].toolTip())
+        self.assertIn('Fullfør nettleserkontrollen',w.event_log.toPlainText())
+        self.assertTrue(w.retry_images_button.isEnabled())
     def test_export_button_remains_inside_viewport_after_loading_all_sources(self):
         from PyQt6.QtCore import QPoint
         w=self.window;w.settings.providers=['clinvar','gnomad','cosmic','oncokb','franklin','mtbp']
@@ -65,5 +74,23 @@ class PublicWindowTests(unittest.TestCase):
         w.resize(1100,700);w.show();self.app.processEvents()
         bottom=w.excel_button.mapTo(w.centralWidget(),QPoint(0,w.excel_button.height())).y()
         self.assertLessEqual(bottom,w.centralWidget().height())
+
+    def test_retry_captures_current_allele_without_starting_a_new_lookup(self):
+        w=self.window;w._apply_session(load_pilot());w.select_variant('DEMO-A',133748283)
+        variant=dict(w.current_variant);key=allele_key(variant)
+        w.lookup_results[key]=[{'provider':'clinvar','status':'found','screenshot_error':'Waiting'},
+                               {'provider':'cosmic','status':'not_found'}]
+        class Browser:
+            def recapture_result(self,provider,row,result):
+                self.call=(provider,dict(row))
+                return {'provider':provider,'status':'found','screenshot':'evidence.png'}
+        browser=Browser();w.database_browser=browser
+        def synchronous(operation,callback,message):callback(operation())
+        with patch.object(w,'_start_task',side_effect=synchronous):w.retry_database_images()
+        self.assertEqual(browser.call,('clinvar',variant))
+        self.assertEqual(w.lookup_results[key][0]['screenshot'],'evidence.png')
+        self.assertNotIn('screenshot_error',w.lookup_results[key][0])
+        self.assertEqual(w.lookup_results[key][1]['status'],'not_found')
+        self.assertIn('bilde klart',w.source_badges['clinvar'].text())
 
 if __name__=='__main__':unittest.main()
