@@ -35,6 +35,20 @@ class SettingsTests(unittest.TestCase):
 
 
 class SettingsPanelTests(unittest.TestCase):
+    def test_saved_account_is_restored_masked_and_can_be_forgotten_without_json_secrets(self):
+        from abl1_workstation.credentials import CredentialStore
+        from test_credentials import MemoryVault
+        with tempfile.TemporaryDirectory() as folder:
+            vault=CredentialStore(folder,backend=MemoryVault());settings=Settings(folder)
+            panel=SettingsPanel(settings,object(),credential_store=vault)
+            panel.emails['franklin'].setText('synthetic@example.invalid');panel.passwords['franklin'].setText('SYNTHETIC_ONLY')
+            panel.save_login('franklin');settings.save()
+            self.assertEqual(panel.passwords['franklin'].text(),'');self.assertIn('Lagret',panel.passwords['franklin'].placeholderText())
+            panel.close();restored=SettingsPanel(Settings(folder),object(),credential_store=vault)
+            self.assertEqual(restored.emails['franklin'].text(),'synthetic@example.invalid')
+            self.assertEqual(restored.passwords['franklin'].text(),'')
+            self.assertNotIn('SYNTHETIC_ONLY',settings.path.read_text())
+            restored.forget_login('franklin');self.assertEqual(vault.get('franklin'),('',''));restored.close()
     def test_source_statuses_are_independent_and_prior_confirmation_is_identified(self):
         with tempfile.TemporaryDirectory() as folder:
             panel=SettingsPanel(Settings(folder),object())
@@ -58,7 +72,7 @@ class SettingsPanelTests(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_login_state_is_refreshed_without_credential_fields(self):
+    def test_login_state_is_refreshed_with_masked_credential_fields(self):
         from PyQt6.QtWidgets import QLineEdit
         class Browser:
             state='logged_out'
@@ -77,5 +91,6 @@ class SettingsPanelTests(unittest.TestCase):
             browser.state='logged_in';panel.refresh_status();finish()
             self.assertEqual(panel.status_labels['franklin'].text(),'Innlogget')
             self.assertEqual(panel.login_buttons['franklin'].text(),'Åpne')
-            self.assertEqual(len(panel.findChildren(QLineEdit)),1)
+            self.assertEqual(len(panel.findChildren(QLineEdit)),9)
+            self.assertTrue(all(field.echoMode()==QLineEdit.EchoMode.Password for field in panel.passwords.values()))
             self.assertFalse(hasattr(panel,'tokens'));panel.close()

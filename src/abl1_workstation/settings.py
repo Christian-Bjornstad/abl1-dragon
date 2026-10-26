@@ -1,4 +1,4 @@
-"""Local preferences and source sign-in status, without credential fields."""
+"""Local preferences and accounts backed by Windows Credential Manager."""
 import json
 from pathlib import Path
 from PyQt6.QtCore import QObject,QThread,QTimer,pyqtSignal
@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QCheckBox,QFileDialog,QFormLayout,QGridLayout,QHBox
 from .report import PROVIDER_NAMES
 from .domain import resource_root
 from .ui_common import label
+from .credentials import CredentialStore,CredentialStoreError
 
 HOMES={'clinvar':'https://www.ncbi.nlm.nih.gov/clinvar/',
        'gnomad':'https://gnomad.broadinstitute.org/',
@@ -50,8 +51,10 @@ class SourceTask(QObject):
 class SettingsPanel(QWidget):
     changed=pyqtSignal()
     busyChanged=pyqtSignal(bool)
-    def __init__(self,settings,browser,parent=None):
+    def __init__(self,settings,browser,parent=None,*,credential_store=None):
         super().__init__(parent);self.settings=settings;self.browser=browser
+        self.credentials=credential_store or CredentialStore(settings.path.parent)
+        if hasattr(browser,'set_credentials'):browser.set_credentials(self.credentials)
         self.thread=None;self.worker=None
         layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(18)
         layout.addWidget(label('Innstillinger','PageTitle'))
@@ -62,7 +65,8 @@ class SettingsPanel(QWidget):
         form.addRow('GRCh37 FASTA',row);layout.addLayout(form)
         grid=QGridLayout();grid.setHorizontalSpacing(20);grid.setVerticalSpacing(14)
         grid.addWidget(label('Database','CardTitle'),0,0);grid.addWidget(label('Innlogging','CardTitle'),0,1)
-        self.enabled={};self.status_labels={};self.login_buttons={}
+        grid.addWidget(label('E-post','CardTitle'),0,2);grid.addWidget(label('Passord','CardTitle'),0,3)
+        self.enabled={};self.status_labels={};self.login_buttons={};self.emails={};self.passwords={}
         for i,(provider,name) in enumerate(PROVIDER_NAMES.items(),1):
             enabled=QCheckBox(name);enabled.setChecked(provider in settings.providers)
             enabled.toggled.connect(self._save);self.enabled[provider]=enabled;grid.addWidget(enabled,i,0)
@@ -70,12 +74,41 @@ class SettingsPanel(QWidget):
             self.status_labels[provider]=state;grid.addWidget(state,i,1)
             login=QPushButton('Åpne / logg inn' if provider in PORTALS else 'Åpne')
             login.clicked.connect(lambda checked=False,p=provider:self.open_source(p))
-            self.login_buttons[provider]=login;grid.addWidget(login,i,2)
+            self.login_buttons[provider]=login;grid.addWidget(login,i,6)
+            if provider in PORTALS:
+                email=QLineEdit();email.setAccessibleName(name+' e-post');email.setPlaceholderText('E-post');email.setMaximumWidth(210)
+                password=QLineEdit();password.setAccessibleName(name+' passord');password.setEchoMode(QLineEdit.EchoMode.Password)
+                password.setMaximumWidth(170);password.setPlaceholderText('Passord')
+                try:
+                    account,secret=self.credentials.get(provider);email.setText(account)
+                    if secret:password.setPlaceholderText('Lagret passord')
+                except CredentialStoreError:pass
+                self.emails[provider]=email;self.passwords[provider]=password
+                grid.addWidget(email,i,2);grid.addWidget(password,i,3)
+                save=QPushButton('Lagre');save.clicked.connect(lambda checked=False,p=provider:self.save_login(p));grid.addWidget(save,i,4)
+                forget=QPushButton('Glem');forget.clicked.connect(lambda checked=False,p=provider:self.forget_login(p));grid.addWidget(forget,i,5)
         grid.setColumnStretch(1,1);layout.addLayout(grid)
         self.refresh_button=QPushButton('Kontroller innlogging');self.refresh_button.clicked.connect(self.refresh_status)
         refresh=QHBoxLayout();refresh.addWidget(self.refresh_button);refresh.addStretch();layout.addLayout(refresh)
         self.message=label('','Subtitle');layout.addWidget(self.message);layout.addStretch()
         self.timer=QTimer(self);self.timer.setInterval(6000);self.timer.timeout.connect(self.refresh_status)
+
+    def save_login(self,provider):
+        try:
+            email=self.emails[provider].text().strip();password=self.passwords[provider].text()
+            if not password:
+                previous,secret=self.credentials.get(provider)
+                if email==previous:password=secret
+            self.credentials.save(provider,email,password)
+            self.passwords[provider].clear();self.passwords[provider].setPlaceholderText('Lagret passord')
+            self.message.setText(PROVIDER_NAMES[provider]+': innlogging lagret.')
+        except (CredentialStoreError,ValueError) as error:self.message.setText(str(error))
+
+    def forget_login(self,provider):
+        try:
+            self.credentials.delete(provider);self.emails[provider].clear();self.passwords[provider].clear()
+            self.passwords[provider].setPlaceholderText('Passord');self.message.setText(PROVIDER_NAMES[provider]+': lagret innlogging fjernet.')
+        except CredentialStoreError as error:self.message.setText(str(error))
 
     @property
     def busy(self):return self.thread is not None
