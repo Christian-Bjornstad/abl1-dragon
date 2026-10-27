@@ -66,6 +66,9 @@ styres med `INSTALL_DRAGEN.cmd --offline` eller `--online`. Vanlig oppstart inst
 En reparasjon lager en ny lokal pakkemappe. Appen bytter til den først etter at
 alle versjoner er kontrollert; tidligere pakker beholdes urørt. Dermed trenger
 installasjonen ikke å flytte en mappe som en kollega eller en annen appprosess bruker.
+Installasjonen kontrollerer også at pakkefilene finnes, inkludert PyQt6, QtCore og
+sip. Ved oppstart hentes DRAGEN-pakkene direkte fra den valgte lokale mappen,
+slik at FELLES-miljøets importoppsett ikke velger en annen Qt-installasjon.
 Hver bruker kjører **INSTALL_DRAGEN.cmd** én gang før sin første oppstart.
 
 Feil vises i konsollen med loggbane. FELLES-loggen ligger normalt i

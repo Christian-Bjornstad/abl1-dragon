@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import hashlib
 from importlib import metadata
+from importlib.machinery import PathFinder
 import json
 import os
 from pathlib import Path
@@ -262,8 +263,46 @@ def requirements(root):
     return project,h['pinned_requirements'](Path(root))
 
 
+def _local_spec(name,target,paths=None,*,allow_missing=False):
+    """Resolve app dependencies from their selected generation, not host hooks."""
+    target=Path(target).resolve()
+    spec=PathFinder.find_spec(name,[str(target)] if paths is None else paths)
+    if spec is None:
+        if allow_missing:return None
+        raise ModuleNotFoundError('Feil pakkekilde for '+name+'. Forventet: '+str(target)+
+                                  '. Funnet: ikke funnet. Kjør INSTALL_DRAGEN.cmd i et nytt FELLES-vindu.',name=name)
+    locations=[] if spec is None else list(spec.submodule_search_locations or [])
+    origin=None if spec is None else spec.origin
+    candidates=([origin] if origin and origin not in ('built-in','frozen') else [])+locations
+    if not candidates or any(not Path(p).resolve().is_relative_to(target) for p in candidates):
+        actual=origin or ', '.join(locations) or 'ikke funnet'
+        raise RuntimeError('Feil pakkekilde for '+name+'. Forventet: '+str(target)+
+                           '. Funnet: '+str(actual)+'. Kjør INSTALL_DRAGEN.cmd i et nytt FELLES-vindu.')
+    return spec
+
+
+def _verify_package_files(target,required):
+    names={_normal_name(row['name']) for row in required}
+    for distribution,module in (('pyqt6','PyQt6'),('openpyxl','openpyxl'),
+                                 ('et-xmlfile','et_xmlfile'),('pillow','PIL'),('websocket-client','websocket')):
+        if distribution not in names:continue
+        spec=_local_spec(module,target)
+        if module=='PyQt6':
+            for child in ('QtCore','sip'):
+                _local_spec('PyQt6.'+child,target,list(spec.submodule_search_locations or []))
+
+
+class _LocalAppFinder:
+    """Keep FELLES import integrations from selecting a different app runtime."""
+    def __init__(self,target):self.target=Path(target).resolve()
+
+    def find_spec(self,fullname,path=None,target=None):
+        if fullname.split('.')[0] not in APP_MODULES:return None
+        return _local_spec(fullname,self.target,path,allow_missing=True)
+
+
 def activate(root=ROOT):
-    root=Path(root).resolve();project,required=requirements(root);target=package_dir(root)
+    root=Path(root).resolve();project,required=requirements(root);target=package_dir(root).resolve()
     if not target.is_dir():raise RuntimeError('Kjør INSTALL_DRAGEN.cmd først.')
     loaded=_loaded_app_modules()
     if loaded:
@@ -271,12 +310,10 @@ def activate(root=ROOT):
     installed={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
     missing=[r['name']+'=='+r['required'] for r in required if installed.get(r['name'].lower().replace('_','-'))!=r['required']]
     if missing:raise RuntimeError('Mangler lokale FELLES-pakker: '+', '.join(missing))
+    _verify_package_files(target,required)
     sys.path[:]=_isolated_paths(root,target)
     importlib.invalidate_caches()
-    for name in ('PyQt6','openpyxl','et_xmlfile','PIL','websocket'):
-        spec=importlib.util.find_spec(name)
-        if spec is None or not spec.origin or not Path(spec.origin).resolve().is_relative_to(target):
-            raise RuntimeError('Feil pakkekilde for '+name+'. Kjør INSTALL_DRAGEN.cmd i et nytt FELLES-vindu.')
+    sys.meta_path.insert(0,_LocalAppFinder(target))
     return project
 
 
@@ -313,7 +350,11 @@ def install(root=ROOT,*,offline=None,pip_main=None):
     # after pip and every pinned version have passed verification.
     if target.exists():
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(target)])}
-        if all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
+        valid=all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required)
+        if valid:
+            try:_verify_package_files(target,required)
+            except (ImportError,RuntimeError):valid=False
+        if valid:
             _installation_finished(root);return 0
         print('Reparerer lokale DRAGEN-pakker for denne brukeren. Eksisterende pakker beholdes.')
     target.parent.mkdir(parents=True,exist_ok=True)
@@ -330,6 +371,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(temporary)])}
         if not all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):
             raise RuntimeError('Versjonskontroll feilet. Delvis mappe beholdes: '+str(temporary))
+        _verify_package_files(temporary,required)
         _select_packages(slot,temporary)
     except Exception:
         print('DRAGEN-INSTALLASJONEN BLE IKKE FULLFORT. Se feilen nedenfor.');raise

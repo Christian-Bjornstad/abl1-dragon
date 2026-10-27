@@ -127,6 +127,56 @@ class FellesTests(unittest.TestCase):
     def test_missing_packages_does_not_fall_back_to_global_qt(self):
         result=self.invoke("f['package_dir'](root).mkdir(parents=True)\nf['activate'](root)")
         self.assertNotEqual(result.returncode,0);self.assertIn('Mangler lokale',result.stderr)
+    def qt_fixture(self,*,namespace=False):
+        (self.root/'requirements-desktop.txt').write_text('PyQt6==6.11.0\n')
+        return ("t=f['package_dir'](root);t.mkdir(parents=True)\n"
+                "dist=t/'PyQt6-6.11.0.dist-info';dist.mkdir()\n"
+                "(dist/'METADATA').write_text('Name: PyQt6\\nVersion: 6.11.0\\n')\n"
+                "p=t/'PyQt6';p.mkdir()\n"+
+                ("" if namespace else "(p/'__init__.py').write_text('LOCAL=True\\n')\n")+
+                "(p/'QtCore.py').write_text('LOCAL=True\\n')\n"
+                "(p/'sip.py').write_text('LOCAL=True\\n')\n")
+    def test_activation_uses_local_qt_despite_host_import_finder(self):
+        code=self.qt_fixture()+("import importlib.abc,importlib.util\n"
+              "foreign=root/'foreign.py';foreign.write_text('raise AssertionError(\"foreign Qt loaded\")')\n"
+              "class HostFinder(importlib.abc.MetaPathFinder):\n"
+              " def find_spec(self,name,path=None,target=None):\n"
+              "  if name=='PyQt6':return importlib.util.spec_from_file_location(name,foreign)\n"
+              "sys.meta_path.insert(0,HostFinder())\n"
+              "f['activate'](root)\nimport PyQt6\nfrom PyQt6 import QtCore\n"
+              "assert PyQt6.LOCAL and QtCore.LOCAL\n"
+              "assert Path(PyQt6.__file__).resolve().is_relative_to(t.resolve())\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+    def test_local_qt_namespace_is_accepted_with_its_runtime_modules(self):
+        result=self.invoke(self.qt_fixture(namespace=True)+"f['activate'](root)\nfrom PyQt6 import QtCore\nassert QtCore.LOCAL\n")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+    def test_optional_webengine_probe_stays_false_after_activation(self):
+        result=self.invoke(self.qt_fixture()+"f['activate'](root)\nimport importlib.util\nassert importlib.util.find_spec('PyQt6.QtWebEngineWidgets') is None\n")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+    def test_install_rejects_metadata_only_qt_before_completion(self):
+        (self.root/'requirements-desktop.txt').write_text('PyQt6==6.11.0\n')
+        result=self.invoke("def fake_pip(args):\n"
+                           " t=Path(args[args.index('--target')+1]);d=t/'PyQt6-6.11.0.dist-info';d.mkdir()\n"
+                           " (d/'METADATA').write_text('Name: PyQt6\\nVersion: 6.11.0\\n')\n"
+                           " return 0\n"
+                           "f['install'](root,pip_main=fake_pip)\n")
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
+        self.assertIn('PyQt6',result.stderr)
+    def test_reinstall_repairs_missing_qt_files_even_when_versions_match(self):
+        code=self.qt_fixture()+("(p/'QtCore.py').unlink()\nimport shutil\ncalled=[]\n"
+              "def repair(args):\n"
+              " called.append(True);new=Path(args[args.index('--target')+1])\n"
+              " shutil.copytree(t,new,dirs_exist_ok=True)\n"
+              " (new/'PyQt6/QtCore.py').write_text('LOCAL=True\\n')\n"
+              " return 0\n"
+              "assert f['install'](root,pip_main=repair)==0\n"
+              "assert called and f['package_dir'](root)!=t\n"
+              "assert not (t/'PyQt6/QtCore.py').exists()\n"
+              "f['activate'](root)\nfrom PyQt6 import QtCore\nassert QtCore.LOCAL\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
     def test_partial_target_is_preserved_and_not_overwritten(self):
         (self.root/'wheelhouse').mkdir()
         result=self.invoke("t=f['package_dir'](root)\nt.mkdir(parents=True)\n(t/'bevar.txt').write_text('bevar')\nf['install'](root,pip_main=lambda args:7)")
