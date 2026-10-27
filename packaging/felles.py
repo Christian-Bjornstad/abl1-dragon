@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 
 ROOT=Path(__file__).resolve().parents[1]
 APP_MODULES=('PyQt6','PyQt6_sip','openpyxl','et_xmlfile','PIL','websocket')
+PIP_WHEEL='pip-26.2.2-py3-none-any.whl'
+PIP_SHA256='fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70'
 
 
 def _loaded_app_modules():
@@ -51,6 +53,36 @@ def _runtime_info():
 def _pip_available():
     try:return importlib.util.find_spec('pip') is not None
     except (ImportError,ValueError):return False
+
+
+def _bundled_pip(root):
+    wheel=Path(root)/'packaging/vendor'/PIP_WHEEL
+    try:
+        if wheel.stat().st_size>5_000_000 or hashlib.sha256(wheel.read_bytes()).hexdigest()!=PIP_SHA256:
+            raise RuntimeError('Den medfølgende pip-pakken er skadet. Pakk ut hele main-ZIP på nytt.')
+    except FileNotFoundError:
+        raise RuntimeError('Den medfølgende pip-pakken mangler. Pakk ut hele main-ZIP på nytt.') from None
+    return wheel
+
+
+def _run_pip(root,args):
+    """Run the bundled CLI in FELLES without installing pip or starting Python."""
+    wheel=_bundled_pip(root)
+    paths=list(sys.path);argv=list(sys.argv)
+    previous={n:m for n,m in sys.modules.items() if n=='pip' or n.startswith('pip.')}
+    for name in previous:del sys.modules[name]
+    try:
+        sys.path.insert(0,str(wheel));sys.argv=['pip',*args]
+        importlib.invalidate_caches()
+        try:runpy.run_module('pip',run_name='__main__',alter_sys=True)
+        except SystemExit as result:return result.code or 0
+        return 0
+    finally:
+        sys.path[:]=paths;sys.argv[:]=argv
+        for name in tuple(sys.modules):
+            if name=='pip' or name.startswith('pip.'):del sys.modules[name]
+        sys.modules.update(previous)
+        importlib.invalidate_caches()
 
 
 def _probe_writeability(root):
@@ -164,7 +196,8 @@ def check(root=ROOT):
             package_writable,package_write_error=_probe_writeability(_package_slot(root).parent)
         except OSError as error:package_write_error=str(error)
     if not package_writable:install_blockers.append('Lokal pakkemappe er ikke skrivbar: '+str(package_write_error))
-    if not pip_available:install_blockers.append('pip mangler i Python FELLES. Bruk godkjent runtime med pip.')
+    try:_bundled_pip(root)
+    except (OSError,RuntimeError) as error:install_blockers.append(str(error))
     if not wheels.is_dir():install_blockers.append('Pakk ut hele offline-pakken med wheelhouse.')
     if wheel_error:install_blockers.append('Wheelhouse kunne ikke leses: '+wheel_error)
     if missing_wheels:install_blockers.append('Mangler kompatible wheels: '+', '.join(missing_wheels))
@@ -292,11 +325,7 @@ def install(root=ROOT,*,offline=None,pip_main=None):
     try:
         # Python FELLES may prohibit a child python.exe. Run pip once in this
         # interpreter, then require a fresh FELLES window before app startup.
-        if pip_main is None:
-            try:from pip._internal.cli.main import main as pip_main
-            except ImportError:
-                raise RuntimeError('pip mangler i aktiv Python. Bruk samme Python FELLES som PRONTO.') from None
-        code=pip_main(args) or 0
+        code=(_run_pip(root,args) if pip_main is None else pip_main(args)) or 0
         if code:raise RuntimeError('Pakkeinstallasjonen feilet. Delvis installasjon beholdes i '+str(temporary))
         distributions={d.metadata['Name'].lower().replace('_','-'):d.version for d in metadata.distributions(path=[str(temporary)])}
         if not all(distributions.get(r['name'].lower().replace('_','-'))==r['required'] for r in required):

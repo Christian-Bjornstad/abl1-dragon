@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -35,6 +36,44 @@ class FellesTests(unittest.TestCase):
         result=self.invoke("f['install'](root,offline=True)")
         self.assertNotEqual(result.returncode,0);self.assertIn('wheelhouse',result.stderr)
         self.assertFalse((self.root/'.felles-packages').exists())
+    def test_bundled_pip_runs_without_site_packages_ensurepip_network_or_child_process(self):
+        code=("import subprocess,socket\n"
+              "sys.path[:]=[p for p in sys.path if 'site-packages' not in p]\n"
+              "sys.modules['ensurepip']=None\n"
+              "def blocked(*a,**k):raise AssertionError('network or child process')\n"
+              "subprocess.Popen=blocked\nsocket.create_connection=blocked\n"
+              "assert __import__('importlib').util.find_spec('pip') is None\n"
+              "before=list(sys.path);argv=list(sys.argv)\n"
+              "assert f['_run_pip'](root,['--version'])==0\n"
+              "assert sys.path==before and sys.argv==argv\n"
+              "assert not any(n=='pip' or n.startswith('pip.') for n in sys.modules)\n")
+        result=self.invoke(code)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('pip 26.2.2',result.stdout)
+    def test_modified_bundled_pip_is_rejected_before_execution(self):
+        wheel=next((self.root/'packaging/vendor').glob('pip-*.whl'))
+        wheel.write_bytes(b'not the official wheel')
+        result=self.invoke("f['_run_pip'](root,['--version'])")
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('pip-pakken',result.stderr)
+    def test_real_offline_install_with_no_pip_or_ensurepip_keeps_global_packages_untouched(self):
+        (self.root/'requirements-desktop.txt').write_text('dragen-probe==1.0\n')
+        wheels=self.root/'wheelhouse';wheels.mkdir()
+        with zipfile.ZipFile(wheels/'dragen_probe-1.0-py3-none-any.whl','w') as wheel:
+            wheel.writestr('dragen_probe.py','VALUE=42\n')
+            wheel.writestr('dragen_probe-1.0.dist-info/METADATA','Metadata-Version: 2.1\nName: dragen-probe\nVersion: 1.0\n')
+            wheel.writestr('dragen_probe-1.0.dist-info/WHEEL','Wheel-Version: 1.0\nGenerator: DRAGEN regression\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
+            wheel.writestr('dragen_probe-1.0.dist-info/RECORD','')
+        result=self.invoke("import subprocess\nsys.path[:]=[p for p in sys.path if 'site-packages' not in p]\n"
+                           "sys.modules['ensurepip']=None\n"
+                           "def blocked(*a,**k):raise AssertionError('child process')\n"
+                           "subprocess.Popen=blocked\n"
+                           "assert f['install'](root,offline=True)==0\n"
+                           "assert (f['package_dir'](root)/'dragen_probe.py').is_file()\n"
+                           "assert __import__('importlib').util.find_spec('dragen_probe') is None\n"
+                           "assert __import__('importlib').util.find_spec('pip') is None\n")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('DRAGEN ER FERDIG INSTALLERT',result.stdout)
     def test_shared_source_packages_are_never_used_or_renamed_and_each_user_installs_locally(self):
         (self.root/'requirements-desktop.txt').write_text('pip=='+ensurepip.version()+'\n')
         code=("shared=root/'.felles-packages'/('cp'+str(sys.version_info.major)+str(sys.version_info.minor)+'-amd64');shared.mkdir(parents=True)\n"
@@ -125,6 +164,12 @@ class FellesTests(unittest.TestCase):
         self.assertFalse((self.root/'.felles-packages').exists())
         stored=json.loads(Path(report['report_path']).read_text(encoding='utf-8'))
         self.assertEqual(stored,report)
+
+    def test_check_accepts_bundled_installer_when_felles_has_no_pip(self):
+        self.diagnostic_fixture()
+        report=self.check_result("f['check'].__globals__['_pip_available']=lambda: False\n")
+        self.assertFalse(report['pip_available'])
+        self.assertTrue(report['ready_for_install'])
 
     def test_existing_packages_can_start_without_pip_wheels_or_writable_program_root(self):
         self.diagnostic_fixture()

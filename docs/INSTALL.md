@@ -54,6 +54,8 @@ En innlimt FELLES-kommando videresender ikke Python-vertens egne argumenter.
 
 Python 3.12–3.14, Windows 64 bit støttes. PRONTO/FELLES-flyten bruker Python 3.14.
 Installasjonen kjører pip i samme interpreter, uten en underordnet `python.exe`.
+Pip følger kildekoden og kontrolleres med SHA-256 før bruk. Python FELLES trenger
+derfor ikke å ha pip eller ensurepip installert. Pip installeres ikke i felles Python.
 Pakkene legges under `%LOCALAPPDATA%\DRAGEN\python-packages`, separat for hver
 Windows-bruker, Python-versjon og pakkeversjon. Kildekoden kan ligge på fellesområdet.
 Gamle `.felles-packages` i programmappen brukes eller endres ikke.
