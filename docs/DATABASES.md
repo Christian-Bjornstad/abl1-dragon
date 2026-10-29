@@ -29,8 +29,11 @@ i kildesvaret når teksten finnes i rapporten.
 - Innlogget T315I-oppslag i ekte Edge: Franklin med 18 bilder, OncoKB med tre
   sideutsnitt og MTBP med kontrollert genomisk treff og variantbilde. Testet
   29. oktober 2026 med offentlig allel; ingen pasientfiler sendt.
-- ClinVar: eksakt API-treff. Nettstedet krevde nettleserkontroll på test-PC-en;
-  kontrollsiden ble korrekt avvist som rapportbilde.
+- ClinVar: eksakt T315I-treff, VCV000012624.3, med versjonerte NM-/NP-referanser.
+  Nettleserkontrollen slapp gjennom etter venting; både gjenopptatt bildeuttak
+  og et nytt vanlig oppslag ga fem lesbare sideutsnitt. Alle fem ble kontrollert
+  og funnet innebygd i Excel-arket Thr315Ile. Testet 29. oktober 2026.
+  En eventuell ny kontrollside lagres ikke som variantbilde.
 - Kontrollerte tester dekker blant annet variantbytte under bildeuttak, tomme
   bilder, delvise uttrekk, gjenoppretting, MTBP-kø og avbrutt innsending.
 - Innloggingsskjemaene er kontrollert i Edge med syntetiske skjemaer og blokkert
