@@ -13,6 +13,18 @@ V={'assembly':'GRCh37','chrom':'9','pos':133748283,'ref':'C','alt':'T','cdna':'c
 
 
 class PortalParserTests(unittest.TestCase):
+    def test_franklin_somatic_header_uses_exact_locus_genome_link_when_build_text_is_hidden(self):
+        page={'url':'https://franklin.genoox.com/clinical-db/variant/snpTumor/chr9-133748283-C-T',
+              'text':'ABL1:c.944C>T\nchr9-133748283 C>T\np.Thr315Ile\nNM_005157.6\nSomatic Clinical Evidence\nAMP Classification\nTier 1',
+              'franklin_result_visible':True,
+              'franklin_genome_links':['https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&position=chr9:133748283-133748283']}
+        self.assertEqual(parse_portal_snapshot('franklin',V,page)['status'],'found')
+        self.assertIn('AMP Classification: Tier 1',parse_portal_snapshot('franklin',V,page)['classification'])
+        alternate={**page,'text':page['text']+'\nAlternate reference\nHG38: Chr9:130,872,896-C-T | c.944C>T | p.Thr315Ile'}
+        self.assertEqual(parse_portal_snapshot('franklin',V,alternate)['status'],'found')
+        self.assertNotEqual(parse_portal_snapshot('franklin',V,{**page,'text':page['text']+'\nGRCh38'})['status'],'found')
+        for link in (page['franklin_genome_links'][0].replace('hg19','hg38'),page['franklin_genome_links'][0].replace('133748283','133748284'),page['franklin_genome_links'][0].replace('genome.ucsc.edu','evil.invalid')):
+            self.assertNotEqual(parse_portal_snapshot('franklin',V,{**page,'franklin_genome_links':[link]})['status'],'found')
     def test_oncokb_account_menu_confirms_login_with_closed_logout_dropdown(self):
         page={'url':'https://www.oncokb.org/','oncokb_account_visible':True,'logout_visible':False}
         self.assertEqual(login_status('oncokb',page)['status'],'logged_in')

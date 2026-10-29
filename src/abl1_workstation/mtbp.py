@@ -7,12 +7,12 @@ from datetime import datetime,timezone
 import json,os,re,tempfile,time,uuid
 from pathlib import Path
 from urllib.parse import urlsplit
-from .lookup import canonical_identity,genomic_hgvs
+from .lookup import canonical_identity,genomic_hgvs,reference_sequences
 from .workflow import allele_key
 from .browser_evidence import evaluate
 
 AMINO=dict(zip(('Ala Arg Asn Asp Cys Gln Glu Gly His Ile Leu Lys Met Phe Pro Ser Thr Trp Tyr Val').split(),'ARNDCQEGHILKMFPSTWYV'))
-REPORT=re.compile(r'/patients/[A-Za-z0-9_-]+/report/[0-9]+/?')
+REPORT=re.compile(r'/patients/[A-Za-z0-9_-]+/(?:sample/[A-Za-z0-9_-]+/)?report/[0-9]+/?')
 class SubmissionNotSent(ValueError):pass
 
 
@@ -40,6 +40,19 @@ def parse_report(variant,job,page):
     for row in page.get('rows',[]):
         if row.get('gene')!='ABL1':continue
         identity=str(row.get('identity_text') or row.get('alteration') or '')
+        genomic=re.findall(r'chr(\d+):\s*(\d+)\s+([ACGT]+)[/>]([ACGT]+)\s*\(GRCh37/hg19\)',identity)
+        if genomic:
+            target=canonical_identity(variant)
+            if len(genomic)!=1 or genomic[0]!=(target['chrom'],str(target['pos']),target['ref'],target['alt']):continue
+            visible=str(row.get('alteration') or '')
+            visible_proteins=re.findall(r'(?:[A-Z][a-z]{2}|[A-Z])[0-9]+(?:[A-Z][a-z]{2}|[A-Z]|\*)',visible)
+            if not expected or {short_protein(p) for p in visible_proteins}!={expected}:continue
+            # Other transcript isoforms have different cDNA/protein numbers.
+            # Their presence is not a contradictory genomic event. Still
+            # reject a contradictory statement on our own reporting reference.
+            primary=re.findall(r'NM_005157\.6(?:\(ABL1\))?:(c\.[0-9]+[ACGT]+>[ACGT]+)',identity)
+            if primary and any(c!=cdna for c in primary):continue
+            matches.append((row,'genomisk GRCh37'));continue
         returned_cdna=re.findall(r'c\.[0-9_]+(?:[ACGT]+>[ACGT]+|delins[ACGT]+|del[ACGT]*|ins[ACGT]+|dup[ACGT]*)',identity)
         if returned_cdna and (not cdna or any(c!=cdna for c in returned_cdna)):continue
         proteins=re.findall(r'(?:[A-Z][a-z]{2}|[A-Z])[0-9]+(?:[A-Z][a-z]{2}|[A-Z]|\*)',identity)
@@ -54,7 +67,9 @@ def parse_report(variant,job,page):
     summary='MTBP ('+job['cancer_type']+', '+basis+'): '+classification
     if functional:summary+=' · '+functional
     if biomarkers:summary+=' · '+biomarkers
+    if 'academic research use only' in str(page.get('text','')):summary+=' · MTBP: academic research use only'
     return {**result,'status':'found','identity_verified':True,'classification':classification,'summary':summary,
+            **reference_sequences([str(row.get('identity_text') or row.get('alteration') or '')]),
             'accession':job['query'],'evidence_level':'; '.join(dict.fromkeys(re.findall(r'Evidence\s+[A-Z]',functional))),
             'identity_method':'Eget DRAGEN analyse-ID + innsendt '+job['query']+' + entydig ABL1 '+basis+' i rapporten',
             'details':{'cancer_type':job['cancer_type'],'match_basis':basis,'functional_evidence':functional,'biomarkers':biomarkers}}
@@ -129,7 +144,7 @@ def wait_acceptance(context,job):
 
 def read_report(context):
     return evaluate(context,'mtbp',r"""
-      if(!/^\/patients\/[A-Za-z0-9_-]+\/report\/[0-9]+\/?$/.test(location.pathname))return null;
+      if(!/^\/patients\/[A-Za-z0-9_-]+\/(?:sample\/[A-Za-z0-9_-]+\/)?report\/[0-9]+\/?$/.test(location.pathname))return null;
       const rows=[...document.querySelectorAll('table')].filter(visible).flatMap(table=>{
         const rows=[...table.rows];if(!rows.length)return [];
         const headers=[...rows[0].cells].map(c=>c.innerText.trim());
@@ -148,13 +163,16 @@ def find_report(context,job):
     # Query only the exact random ID. Never copy the account's report list or
     # another patient's name into a receipt, screenshot or Excel workbook.
     current=context.auth_snapshot() or {}
+    owned=getattr(context,'_dragen_mtbp_report',None)
+    if owned==(job['analysis_id'],current.get('url')):return None
     if urlsplit(current.get('url','')).path.rstrip('/')!='/patients':context.navigate('https://mtbp.org/patients/')
     target=evaluate(context,'mtbp',r"""
       if(location.pathname.replace(/\/$/,'')!=='/patients'||document.readyState!=='complete')return null;
       const id="""+json.dumps(job['analysis_id'])+""";
       const links=[...document.querySelectorAll('a[href]')].filter(e=>visible(e)&&e.innerText.trim()===id);
       return links.length===1?links[0].href:null;""")
-    if target and report_url(target):context.navigate(target)
+    if target and report_url(target):
+        context.navigate(target);context._dragen_mtbp_report=(job['analysis_id'],target)
     return None
 
 

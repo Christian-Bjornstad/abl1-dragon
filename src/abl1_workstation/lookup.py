@@ -101,6 +101,24 @@ def _xml(raw):
     return root
 
 
+def reference_sequences(texts):
+    """Keep versioned RefSeq accessions and accession-qualified HGVS together.
+
+    Callers must scope source text to an identity-verified allele/result. Do
+    not invent a transcript/protein pairing from neighbouring accession lists.
+    """
+    result={'transcripts':[],'proteins':[],'reference_hgvs':[]}
+    for text in texts:
+        if not isinstance(text,str):continue
+        for accession in re.findall(r'(?<![A-Za-z0-9_])N[MP]_[0-9]+\.[0-9]+(?![A-Za-z0-9_.])',text):
+            field='transcripts' if accession.startswith('NM_') else 'proteins'
+            if accession not in result[field]:result[field].append(accession)
+        for expression in re.findall(r'(?<![A-Za-z0-9_])N[MP]_[0-9]+\.[0-9]+(?:\([A-Za-z0-9_-]+\))?:[cnpr]\.[A-Za-z0-9_+*?=><().\[\];-]+',text):
+            expression=expression.rstrip('.,;')
+            if expression not in result['reference_hgvs']:result['reference_hgvs'].append(expression)
+    return result
+
+
 class LookupService:
     def __init__(self,settings_dir,*,transport=None,browser_adapter=None):
         self.settings_dir=Path(settings_dir)
@@ -110,6 +128,7 @@ class LookupService:
     @staticmethod
     def _result(provider,identity,status,summary,**details):
         return {'provider':provider,'status':status,'summary':summary,'classification':'','evidence_level':'',
+                'transcripts':[],'proteins':[],'reference_hgvs':[],
                 'accession':'','url':HOMES.get(provider,''),'checked_at':datetime.now(timezone.utc).isoformat(),
                 'variant_key':variant_key(identity) if identity else '', 'identity':identity,**details}
 
@@ -154,7 +173,7 @@ class LookupService:
         if not isinstance(data,dict) or data.get('status') not in STATUSES:raise ValueError('Ugyldig nettlesersvar.')
         identity=canonical_identity(v)
         if data['status']=='found' and canonical_identity(data.get('identity') or {})!=identity:raise ValueError('Nettlesertreffets allel er ikke kontrollert.')
-        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshots','captured_at','screenshot_error','screenshot_reason'}
+        allowed={'classification','evidence_level','accession','url','summary','details','classifications','source_version','identity_verified','identity_method','screenshot','screenshots','captured_at','screenshot_error','screenshot_reason','transcripts','proteins','reference_hgvs'}
         return self._result(provider,identity,data['status'],str(data.get('summary','')),**{k:value for k,value in data.items() if k in allowed and k!='summary'})
 
     def _clinvar(self,v,tokens,settings):
@@ -184,6 +203,8 @@ class LookupService:
                                'ref':a.get('referenceAlleleVCF','').upper(),'alt':a.get('alternateAlleleVCF','').upper()}
                     if candidate==identity:matched=True;break
             if not matched:continue
+            references=reference_sequences(value for node in allele.findall('.//HGVS')
+                for child in node.iter() for value in [child.text,*child.attrib.values()])
             axes={}
             for name,path in [('germline','GermlineClassification'),('somatic_clinical_impact','SomaticClinicalImpact'),('oncogenicity','OncogenicityClassification')]:
                 node=record.find('Classifications/'+path)
@@ -197,7 +218,7 @@ class LookupService:
                 classification=classification,classifications=axes,accession=accession,url=url,
                 evidence_level='; '.join(dict.fromkeys(a['review_status'] for a in axes.values() if a and a['review_status'])),
                 identity_verified=True,identity_method='GRCh37 + direkte ClassifiedRecord/SimpleAllele + positionVCF/REF/ALT',
-                source_version=accession,details={'source_updated':archive.get('DateLastUpdated'),'raw_sha256':hashlib.sha256(raw).hexdigest()})
+                source_version=accession,**references,details={'source_updated':archive.get('DateLastUpdated'),'raw_sha256':hashlib.sha256(raw).hexdigest()})
         if count>len(ids):return self._result('clinvar',identity,'error','Kandidatsøket var avkortet. Fravær av eksakt alleltreff kan ikke avgjøres.')
         return self._result('clinvar',identity,'not_found','Ingen direkte ClinVar-post matchet eksakt GRCh37-posisjon, REF og ALT. Dette betyr ikke benign.')
 

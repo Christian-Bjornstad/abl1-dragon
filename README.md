@@ -41,8 +41,16 @@ Alle opprinnelige kall finnes under **Alle**. Kryss av variantene som skal søke
 
 Velg variant og åpne **IGV** i venstremenyen. På Windows åpnes lesningsvisningen i
 et eget vindu med PC-ens Microsoft Edge, med standardzoom og 200 bp-oversikt.
-Ingen egen Chromium-/QtWebEngine-prosess trengs. Dekning, grå lesninger med baseavvik,
+Ingen egen Chromium-/QtWebEngine-prosess trengs. Dekning, lesninger farget etter strand med baseavvik,
 referansesekvens og NM_005157.6 gen-/proteinspor vises lokalt.
+
+**Innstillinger → Importer Excel-liste** laster en lokal variantliste og markerer
+treff i tabellen. [ELN 2025 tabell 5](assets/ELN_2025_Tabell5.xlsx) følger med,
+med 29 enkeltvarianter og [kilde/bearbeiding](assets/ELN_2025_Tabell5.md).
+Listen gjelder CML og bestemmer ikke hvilke varianter som velges til rapport.
+Proteinvarianter vises med tre bokstaver, for eksempel `p.Val299Leu`.
+Excel-fanene bruker samme navn. NM-/NP-referanser og deres HGVS fra databasene
+vises som kildeopplysninger, separat fra analysens referansetranskript.
 Analysesiden har en hendelseslogg. Medfølgende `chr9.fa.gz` og `.fai` klargjøres
 automatisk under installasjon eller første start. IGV trenger ingen referansenedlasting.
 En annen GRCh37/hg19 FASTA kan velges i **Innstillinger**.

@@ -8,6 +8,13 @@ from abl1_workstation.workflow import allele_key
 V={'chrom':'9','pos':133748283,'ref':'C','alt':'T','sample':'DO_NOT_STORE','email':'PRIVATE'}
 
 class EvidenceStoreTests(unittest.TestCase):
+    def test_versioned_reference_sequences_survive_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            references={'transcripts':['NM_005157.6'],'proteins':['NP_005148.2'],
+                        'reference_hgvs':['NM_005157.6(ABL1):c.944C>T','NP_005148.2:p.Thr315Ile']}
+            EvidenceStore(directory).save(V,{'provider':'clinvar','identity':canonical_identity(V),'status':'found',**references})
+            restored=EvidenceStore(directory).load(V)[0]
+            for field,value in references.items():self.assertEqual(restored[field],value)
     def test_completed_sources_survive_restart_without_sample_or_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             store=EvidenceStore(directory)

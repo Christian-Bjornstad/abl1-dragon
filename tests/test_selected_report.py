@@ -32,7 +32,7 @@ class SelectedReportTests(unittest.TestCase):
             export_report(session,[v,other],results,path,providers=['clinvar'],igv_images={row_key(v):str(png)})
             book=load_workbook(path)
             self.assertEqual(len(book.sheetnames),2);self.assertNotIn('Resultater',book.sheetnames)
-            self.assertTrue(all('T315I' in s for s in book.sheetnames));self.assertEqual(len(set(s.lower() for s in book.sheetnames)),2)
+            self.assertTrue(all('Thr315Ile' in s for s in book.sheetnames));self.assertEqual(len(set(s.lower() for s in book.sheetnames)),2)
             self.assertEqual(len(book.worksheets[0]._images),2);self.assertEqual(len(book.worksheets[1]._images),1)
             text=' '.join(str(c.value or '') for row in book.worksheets[1] for c in row)
             self.assertIn('Other',text);self.assertIn('Ikke tilgjengelig',text);book.close()

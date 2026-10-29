@@ -16,6 +16,74 @@ def png_bytes(blank=False):
 
 
 class BrowserEvidenceTests(unittest.TestCase):
+    def test_classification_tabs_use_native_click_and_only_known_read_only_labels(self):
+        from abl1_workstation.browser_evidence import activate
+        context=Mock();context.evaluate.return_value={'x':100,'y':200}
+        self.assertTrue(activate(context,'Computed Classification'))
+        self.assertEqual([call.args[1]['type'] for call in context._page_call.call_args_list],['mousePressed','mouseReleased'])
+        with self.assertRaises(ValueError):activate(context,'Save Case')
+    def test_oncokb_page_captures_include_content_below_first_viewport(self):
+        from abl1_workstation.browser_evidence import evidence_views
+        class Page:
+            def _page_call(self,*args,**kwargs):pass
+            def evaluate(self,expression):return {'width':1440,'height':3900} if 'scrollHeight' in expression else False
+        with patch('abl1_workstation.browser_evidence.time.sleep'):
+            views=list(evidence_views(Page(),'oncokb'))
+        self.assertEqual(len(views),4)
+        self.assertEqual(views[-1][1]['y']+views[-1][1]['height'],3900)
+    def test_capture_merges_references_from_verified_panels_into_durable_receipt(self):
+        from abl1_workstation.evidence_store import EvidenceStore
+        class Page:
+            current=PAGE
+            def snapshot(self):return self.current
+            def evidence_views(self,provider):
+                self.current={**PAGE,'text':PAGE['text']+'\nNM_005157.6:c.944C>T NP_005148.2:p.Thr315Ile'}
+                yield 'Reference panel',None
+            def capture_png(self,path,**options):Path(path).write_bytes(png_bytes())
+        with tempfile.TemporaryDirectory() as folder:
+            browser=PortalBrowser(folder)
+            result=browser._capture('franklin',V,Page(),parse_portal_snapshot('franklin',V,PAGE))
+            self.assertEqual(result.get('transcripts'),['NM_005157.6'])
+            self.assertEqual(result.get('proteins'),['NP_005148.2'])
+            self.assertEqual(EvidenceStore(folder).load(V)[0].get('reference_hgvs'),
+                             ['NM_005157.6:c.944C>T','NP_005148.2:p.Thr315Ile'])
+            browser.close()
+    def test_verified_portal_retains_versioned_references_and_qualified_hgvs(self):
+        page={**PAGE,'text':PAGE['text']+'\nNM_005157.6(ABL1):c.944C>T\nNP_005148.2:p.(Thr315Ile)\nNM_005157'}
+        result=parse_portal_snapshot('franklin',V,page)
+        self.assertEqual(result.get('transcripts'),['NM_005157.6'])
+        self.assertEqual(result.get('proteins'),['NP_005148.2'])
+        self.assertEqual(result.get('reference_hgvs'),['NM_005157.6(ABL1):c.944C>T','NP_005148.2:p.(Thr315Ile)'])
+        self.assertFalse(parse_portal_snapshot('franklin',{**V,'alt':'G'},page).get('transcripts'))
+
+    def test_clinvar_capture_tiles_cover_whole_page_at_readable_width(self):
+        from abl1_workstation.browser_evidence import evidence_views
+        class Page:
+            def _page_call(self,*args,**kwargs):pass
+            def evaluate(self,expression):
+                if 'scrollHeight' in expression:return {'width':1440,'height':5200}
+                return False
+        with patch('abl1_workstation.browser_evidence.time.sleep'):
+            views=list(evidence_views(Page(),'clinvar'))
+        clips=[clip for label,clip in views]
+        self.assertGreater(len(clips),1)
+        self.assertEqual(clips[0]['y'],0)
+        self.assertEqual(clips[-1]['y']+clips[-1]['height'],5200)
+        self.assertTrue(all(c['width']==1440 and 80<=c['height']<=1200 for c in clips))
+        self.assertTrue(all(b['y']<=a['y']+a['height'] for a,b in zip(clips,clips[1:])))
+
+    def test_clinvar_excessive_page_keeps_bounded_tiles_then_reports_truncation(self):
+        from abl1_workstation.browser_evidence import evidence_views
+        class Page:
+            def _page_call(self,*args,**kwargs):pass
+            def evaluate(self,expression):
+                if 'scrollHeight' in expression:return {'width':1440,'height':1000000}
+                return False
+        with patch('abl1_workstation.browser_evidence.time.sleep'):
+            views=evidence_views(Page(),'clinvar');captured=[]
+            with self.assertRaises(RuntimeError):
+                for view in views:captured.append(view)
+        self.assertEqual(len(captured),32)
     def test_finished_picture_receipt_survives_interruption_before_remaining_views(self):
         from abl1_workstation.evidence_store import EvidenceStore
         class Page:

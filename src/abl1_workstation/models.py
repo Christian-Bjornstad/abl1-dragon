@@ -2,6 +2,7 @@
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PyQt6.QtGui import QColor
 from .workflow import category,row_key
+from .protein_names import protein_display
 
 
 def fmt(value, percent=False):
@@ -29,7 +30,7 @@ def flags(v):
 
 
 class VariantModel(QAbstractTableModel):
-    HEADERS=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein, enkeltallel','AF (%)','ALT / DP','FILTER']
+    HEADERS=['Prøve','GRCh37-posisjon','REF > ALT','cDNA','Protein, enkeltallel','AF (%)','ALT / DP','FILTER','Variantliste']
 
     def __init__(self,rows=None,parent=None):
         super().__init__(parent);self.rows=rows or [];self.checked=set()
@@ -63,10 +64,13 @@ class VariantModel(QAbstractTableModel):
         if role==Qt.ItemDataRole.CheckStateRole and c==0:
             return Qt.CheckState.Checked if row_key(v) in self.checked else Qt.CheckState.Unchecked
         if role==Qt.ItemDataRole.UserRole:
-            return [v.get('sample',''),v.get('pos',0),v.get('ref','')+'>'+v.get('alt',''),v.get('cdna') or '',v.get('protein_snv_alone') or '',v.get('format_af') if v.get('format_af') is not None else -1,v.get('format_dp') if v.get('format_dp') is not None else -1,v.get('filter') or '',','.join(flags(v))][c]
+            return [v.get('sample',''),v.get('pos',0),v.get('ref','')+'>'+v.get('alt',''),v.get('cdna') or '',protein_display(v.get('protein_snv_alone')),v.get('format_af') if v.get('format_af') is not None else -1,v.get('format_dp') if v.get('format_dp') is not None else -1,v.get('filter') or '',bool(v.get('eln_watchlist'))][c]
+        if role==Qt.ItemDataRole.BackgroundRole and v.get('eln_watchlist'):return QColor('#EEE5F8')
+        if role==Qt.ItemDataRole.ToolTipRole and c==8:
+            return '\n'.join(r['source']+' · '+r.get('scope','') for r in v.get('eln_watchlist',[])) or 'Ikke i importert liste'
         if role in (Qt.ItemDataRole.DisplayRole,Qt.ItemDataRole.ToolTipRole):
-            return [v.get('sample',''),f"{v.get('chrom')}:{v.get('pos')}",f"{v.get('ref')}>{v.get('alt')}",v.get('cdna') or '–',v.get('protein_snv_alone') or '–',fmt(v.get('format_af'),True),f"{v.get('alt_ad') if v.get('alt_ad') is not None else '–'} / {v.get('format_dp') if v.get('format_dp') is not None else '–'}",v.get('filter') or '–',' · '.join(flags(v)) or '–'][c]
-        if role==Qt.ItemDataRole.ForegroundRole and c in (7,8) and flags(v):return QColor('#A15C00')
+            return [v.get('sample',''),f"{v.get('chrom')}:{v.get('pos')}",f"{v.get('ref')}>{v.get('alt')}",v.get('cdna') or '–',protein_display(v.get('protein_snv_alone')) or '–',fmt(v.get('format_af'),True),f"{v.get('alt_ad') if v.get('alt_ad') is not None else '–'} / {v.get('format_dp') if v.get('format_dp') is not None else '–'}",v.get('filter') or '–','Treff' if v.get('eln_watchlist') else '–'][c]
+        if role==Qt.ItemDataRole.ForegroundRole and c==7 and flags(v):return QColor('#A15C00')
 
 
 class VariantFilter(QSortFilterProxyModel):
@@ -88,4 +92,4 @@ class VariantFilter(QSortFilterProxyModel):
         if self.status=='PASS' and v.get('filter')!='PASS':return False
         if self.status=='DRAGEN-filtrerte' and v.get('filter')=='PASS':return False
         if self.status=='Med kontrollflagg' and not flags(v):return False
-        return not self.query or self.query in ' '.join(str(v.get(k) or '') for k in ('sample','chrom','pos','ref','alt','cdna','protein_snv_alone','filter','notes')).casefold()
+        return not self.query or self.query in (' '.join(str(v.get(k) or '') for k in ('sample','chrom','pos','ref','alt','cdna','protein_snv_alone','filter','notes'))+' '+protein_display(v.get('protein_snv_alone'))).casefold()

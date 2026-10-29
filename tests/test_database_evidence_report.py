@@ -24,7 +24,7 @@ class DatabaseEvidenceReportTests(unittest.TestCase):
             path=root/'report.xlsx'
             export_report(session,[variant],{allele_key(variant):[result]},path,providers=['franklin','oncokb'])
             book=load_workbook(path);sheet=book.worksheets[0]
-            self.assertEqual(book.sheetnames,['T315I'])
+            self.assertEqual(book.sheetnames,['Thr315Ile'])
             self.assertEqual(len(sheet._images),2)
             text='\n'.join(str(c.value or '') for row in sheet for c in row)
             self.assertIn('ACMG Classification',text);self.assertIn('Oncogenic Classification',text)

@@ -3,7 +3,7 @@
 Actions are limited to known result tabs, evidence cards and cookie rejection.
 No consent, CAPTCHA, account or report-creation control is clicked here.
 """
-import json,time
+import json,math,time
 from urllib.parse import urlsplit,urlunsplit
 
 HOSTS={'clinvar':['www.ncbi.nlm.nih.gov'],
@@ -40,14 +40,20 @@ def dismiss_cookies(context,provider):
 
 def activate(context,label):
     if label not in ('Computed Classification','ACMG Classification','Oncogenic Classification'):raise ValueError('Ukjent resultatfane.')
-    return evaluate(context,'franklin',r"""
+    point=evaluate(context,'franklin',r"""
       if(!/\/clinical-db\/variant\/snp(?:Tumor)?\//.test(location.pathname))return false;
       const label="""+json.dumps(label)+""";
       let matches=[...document.querySelectorAll('[role=tab]')].filter(e=>visible(e)&&e.innerText.trim()===label);
-      if(!matches.length)matches=[...document.querySelectorAll('span')].filter(e=>visible(e)&&e.innerText.trim()===label&&!e.querySelector('span'));
+      if(!matches.length)matches=[...document.querySelectorAll('span,div')].filter(e=>visible(e)&&e.innerText.trim()===label&&e.children.length===0);
       if(matches.length!==1)return false;
       const node=matches[0];if(node.closest('form'))return false;
-      (node.getAttribute('role')==='tab'?node:node.parentElement).click();return true;""")
+      const target=node.getAttribute('role')==='tab'?node:node.parentElement;
+      target.scrollIntoView({block:'nearest'});const r=target.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};""")
+    if not isinstance(point,dict) or set(point)!={'x','y'}:return False
+    if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not 0<=v<=10000 for v in point.values()):return False
+    for kind in ('mousePressed','mouseReleased'):
+        context._page_call('Input.dispatchMouseEvent',{'type':kind,**point,'button':'left','clickCount':1})
+    return True
 
 
 def wait_panel(context,selector):
@@ -66,6 +72,32 @@ def overview_clip(context,provider):
       const x=Math.max(0,Math.min(...boxes.map(r=>r.left))-16)+scrollX;
       const y=Math.max(0,Math.min(...boxes.map(r=>r.top))-16)+scrollY;
       return {x,y,width:Math.min(1600,Math.max(...boxes.map(r=>r.right))+scrollX-x+16),height:Math.max(...boxes.map(r=>r.bottom))+scrollY-y+16};""")
+
+
+def page_views(context,provider):
+    """Readable page tiles avoid both a clipped summary and a giant bitmap.
+
+    The original page is retained. Each tile overlaps its predecessor so rows
+    crossing the boundary can be read in the next image. A very large page
+    produces explicit partial-capture status after the bounded number of tiles.
+    """
+    if provider not in ('clinvar','oncokb'):raise ValueError('Ukjent sideuttrekk.')
+    title='ClinVar' if provider=='clinvar' else 'OncoKB'
+    size=evaluate(context,provider,"""
+      return {width:Math.max(document.documentElement.clientWidth,document.documentElement.scrollWidth),
+              height:Math.max(document.documentElement.scrollHeight,document.body?.scrollHeight||0)};""")
+    if (not isinstance(size,dict) or any(isinstance(size.get(k),bool) or not isinstance(size.get(k),(int,float))
+            or not math.isfinite(size[k]) for k in ('width','height'))):raise RuntimeError(title+'-sidens størrelse kunne ikke leses.')
+    width=math.ceil(size['width']);height=math.ceil(size['height'])
+    if not 200<=width<=4000 or height<80:raise RuntimeError(title+'-siden har uventede dimensjoner.')
+    y=0
+    for index in range(32):
+        tile_height=min(1200,height-y)
+        if tile_height<80:y=max(0,height-80);tile_height=height-y
+        yield title+' page · section '+str(index+1),{'x':0,'y':y,'width':width,'height':tile_height}
+        if y+tile_height>=height:return
+        y+=tile_height-80
+    raise RuntimeError(title+'-siden overstiger 32 bildeseksjoner; bildeuttrekket er avkortet.')
 
 
 def card_view(context,selector,index):
@@ -102,12 +134,19 @@ def classification_views(context,label,panel,categories):
 def evidence_views(context,provider):
     context._page_call('Emulation.setDeviceMetricsOverride',{'width':1440,'height':1000,'deviceScaleFactor':1,'mobile':False})
     dismiss_cookies(context,provider);time.sleep(.25)
-    yield ('Classification summary' if provider=='clinvar' else 'Variant overview'),overview_clip(context,provider)
+    if provider in ('clinvar','oncokb'):
+        yield from page_views(context,provider)
+        return
+    yield 'Variant overview',None
     if provider!='franklin':return
     initial=context.snapshot() or {};original_url=initial.get('url','')
     failures=[]
     try:
-        if activate(context,'Computed Classification'):time.sleep(.4)
+        if activate(context,'Computed Classification'):
+            for _ in range(32):
+                ready=evaluate(context,'franklin',"return [...document.querySelectorAll('span,div')].some(e=>visible(e)&&e.children.length===0&&e.innerText.trim()==='ACMG Classification');")
+                if ready:break
+                time.sleep(.25)
         for args in (('ACMG Classification','gnx-result-page','gnx-result-page gnx-result-category'),
                      ('Oncogenic Classification','gnx-oncogenic-classification-app','gnx-oncogenic-classification-app gnx-oncogenic-classification-tile')):
             try:yield from classification_views(context,*args)
@@ -119,7 +158,7 @@ def evidence_views(context,provider):
                 ready=evaluate(context,'franklin',"return [...document.querySelectorAll('h1,h2,h3,h4,[role=heading]')].filter(visible).some(e=>e.innerText.trim()==='Predictions');")
                 if ready:break
                 time.sleep(.25)
-            for label in ('Predictions','Population Frequencies'):
+            for label in ('Predictions','Population Frequencies','Transcripts and References'):
                 found=evaluate(context,'franklin',"""
                   const heading=[...document.querySelectorAll('h1,h2,h3,h4,[role=heading]')].filter(visible).find(e=>e.innerText.trim()==="""+json.dumps(label)+""");
                   if(!heading)return false;heading.scrollIntoView({block:'start'});window.scrollBy(0,-24);return true;""")

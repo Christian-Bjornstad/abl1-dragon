@@ -22,7 +22,7 @@ from urllib.parse import quote, unquote, urlsplit, parse_qs
 from urllib.request import ProxyHandler, build_opener
 
 from .database_browser import EdgeBrowser, checked_url
-from .lookup import canonical_identity, genomic_hgvs, _NoRedirect
+from .lookup import canonical_identity, genomic_hgvs, reference_sequences, _NoRedirect
 
 LOGIN_URLS={'franklin':'https://franklin.genoox.com/login',
             'oncokb':'https://www.oncokb.org/login',
@@ -81,7 +81,7 @@ def _labelled_classifications(provider,text):
     Do not scrape every class term in legends, tool menus or general help text.
     A changed site layout must produce an explicit retrieval error, not a guess.
     """
-    labels=(r'Suggested classification|Computed classification|ACMG classification|Oncogenic classification|Oncogenicity'
+    labels=(r'Suggested classification|Computed classification|ACMG classification|Oncogenic classification|Oncogenicity|AMP Classification'
             if provider=='franklin' else r'Oncogenicity|Oncogenic classification|Biological effect')
     lines=[' '.join(line.split()) for line in text.splitlines() if line.strip()]
     found=[]
@@ -89,12 +89,13 @@ def _labelled_classifications(provider,text):
         heading=re.fullmatch('('+labels+r')(?:\s*[:\-]\s*(.*))?',line,re.I)
         if not heading:continue
         value=(heading[2] or (lines[i+1] if i+1<len(lines) else '')).strip()
-        if not re.fullmatch(CLASS_LABELS,value,re.I):continue
+        pattern=r'Tier\s+(?:[1-4]|I{1,3}|IV)' if heading[1].casefold()=='amp classification' else CLASS_LABELS
+        if not re.fullmatch(pattern,value,re.I):continue
         # Adjacent class values usually form a legend/menu, not a result badge.
         next_index=i+1 if heading[2] else i+2
         if next_index<len(lines) and re.fullmatch(CLASS_LABELS,lines[next_index],re.I):continue
         pair=(heading[1],value)
-        if pair not in found:found.append(pair)
+        if not any((k.casefold(),v.casefold())==(pair[0].casefold(),pair[1].casefold()) for k,v in found):found.append(pair)
     return found
 
 
@@ -157,9 +158,21 @@ def parse_portal_snapshot(provider,variant,snapshot):
     build38=bool(re.search(r'(?<!\w)(?:GRCh38|hg38)(?!\w)',text,re.I))
     identity_method=''
     if provider=='franklin':
+        # The assessment page explicitly lists an alternate hg38 mapping in
+        # addition to the primary hg19 record. Do not treat that labelled row
+        # as a switch of the record's assembly; other hg38 markers still block.
+        primary_text=re.sub(r'(?im)^Alternate reference\s*\nHG38:\s*Chr9:[0-9,]+-[ACGT]+-[ACGT]+[^\n]*','',text)
+        build38=bool(re.search(r'(?<!\w)(?:GRCh38|hg38)(?!\w)',primary_text,re.I))
         needle=f"chr{identity['chrom']}-{identity['pos']}-{identity['ref']}-{identity['alt']}"
         route_match=re.search(r'/variant/snp(?:Tumor)?/([^/?#]+)',route)
-        visible_allele=(needle in compact or bool(re.search(r'(?<![\w])chr'+re.escape(identity['chrom'])+r':\s*'+str(identity['pos'])+r'\s*'+re.escape(identity['ref'])+r'\s*>\s*'+re.escape(identity['alt'])+r'(?![ACGT\w])',text)))
+        for link in snapshot.get('franklin_genome_links',[]):
+            if not isinstance(link,str):continue
+            linked=urlsplit(link);query=parse_qs(linked.query)
+            position=f"chr{identity['chrom']}:{identity['pos']}-{identity['pos']+len(identity['ref'])-1}"
+            if linked.scheme=='https' and linked.netloc=='genome.ucsc.edu' and query.get('position')==[position]:
+                if query.get('db')==['hg19']:build37=True
+                elif query.get('db')==['hg38']:build38=True
+        visible_allele=(needle in compact or bool(re.search(r'(?<![\w])chr'+re.escape(identity['chrom'])+r'[:-]\s*'+str(identity['pos'])+r'\s*'+re.escape(identity['ref'])+r'\s*>\s*'+re.escape(identity['alt'])+r'(?![ACGT\w])',text)))
         exact=route_match is not None and route_match[1]==needle and visible_allele and build37 and not build38
         ready=bool(re.search(r'Suggested classification|Computed classification|ACMG classification|Oncogenic classification|Oncogenicity|Somatic Clinical Evidence',text,re.I))
         identity_method='Franklin GRCh37/hg19 + eksakt variant-rute + synlig VCF-allel'
@@ -197,6 +210,7 @@ def parse_portal_snapshot(provider,variant,snapshot):
     if readable_page and not classifications:
         summary='Klassifikasjonen kunne ikke leses automatisk. Se variantens kildebilde og lenke.'
     return {**result,'status':'found','classification':classification,'evidence_level':'; '.join(label+': '+value for label,value in levels),
+            **reference_sequences([text]),
             'summary':f'{provider.title()}: identitetskontrollert portalresultat. '+summary,
             'identity_verified':True,'identity_method':identity_method,
             'accession':genomic_hgvs(variant),'classifications':{label:{'description':value} for label,value in classifications},
@@ -435,8 +449,9 @@ class _EdgeContext:
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
             franklin_result_visible:location.hostname==='franklin.genoox.com'&&Array.from(document.querySelectorAll('gnx-result-page,gnx-oncogenic-classification-app,[role=tabpanel]')).some(visible),
+            franklin_genome_links:location.hostname==='franklin.genoox.com'?Array.from(document.querySelectorAll('a[href]')).filter(e=>visible(e)&&e.href.startsWith('https://genome.ucsc.edu/')).map(e=>e.href):[],
             mtbp_form:Array.from(document.querySelectorAll('#variant-input')).some(visible),
-            oncokb_account_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('header #account-menu')).some(visible),
+            oncokb_account_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('#account-menu,#collapsed-nav-account-menu')).some(e=>(e.innerText||'').trim()==='Account'),
             oncokb_result_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('h1')).some(x=>visible(x)&&/\\bABL1\\b/.test(x.innerText||''))&&Array.from(document.querySelectorAll('#clinical-implications')).some(visible),
             logout_visible:controls.some(x=>/^(?:log\\s*out|sign\\s*out|logout)$/i.test(caption(x))),
             login_visible:controls.some(x=>/^(?:log\\s*in|sign\\s*in|login)(?:\\s*\\/\\s*register)?$/i.test(caption(x)))};
@@ -741,6 +756,20 @@ class PortalBrowser:
                 problem=self._capture_problem(provider,variant,snapshot)
                 if problem:
                     path.unlink(missing_ok=True);return self._capture_error(updated,*problem)
+                # A later evidence tab can reveal additional isoforms. Merge
+                # only after its allele has passed the same capture checks.
+                for field,values in reference_sequences([snapshot.get('text','')]).items():
+                    updated[field]=list(dict.fromkeys([*updated.get(field,[]),*values]))
+                if provider=='franklin':
+                    parsed=parse_portal_snapshot(provider,variant,snapshot)
+                    classes={**updated.get('classifications',{}),**parsed.get('classifications',{})}
+                    for key in list(classes):
+                        if key.casefold()=='suggested classification' and any(k.casefold()=='acmg classification' and v==classes[key] for k,v in classes.items()):
+                            del classes[key]
+                    if classes:
+                        updated['classifications']=classes
+                        updated['classification']='; '.join(k+': '+str(v['description']) for k,v in classes.items())
+                        updated['summary']='Franklin: identitetskontrollert portalresultat. '+updated['classification']
                 captured=datetime.now(timezone.utc).isoformat()
                 records.append({'label':str(label),'path':str(path),'url':snapshot.get('url',''),'captured_at':captured})
                 updated={**updated,'screenshot':records[0]['path'],'screenshots':list(records),'captured_at':captured,'identity_verified':True}

@@ -13,6 +13,23 @@ ROW={'gene':'ABL1','alteration':'p.Thr315Ile','identity_text':'p.Thr315Ile','sec
 PAGE={'url':'https://mtbp.org/patients/123/report/456/','text':JOB['analysis_id'],'rows':[ROW],'ready_state':'complete'}
 
 class MtbpTests(unittest.TestCase):
+    def test_sample_report_route_and_exact_genomic_allele_allow_other_isoform_numbering(self):
+        from abl1_workstation.mtbp import report_url
+        url='https://mtbp.org/patients/123/sample/123/report/456/'
+        self.assertTrue(report_url(url))
+        row={**ROW,'identity_text':'chr9:133748283 C/T (GRCh37/hg19) ENST00000318560.5:c.944C>T p.Thr315Ile ENST00000372348.2:c.1001C>T p.Thr334Ile'}
+        page={**PAGE,'url':url,'rows':[row]}
+        self.assertEqual(parse_report(V,JOB,page)['status'],'found')
+        for text in (row['identity_text'].replace('C/T','C/G'),row['identity_text']+' NM_005157.6:c.944C>G'):
+            self.assertNotEqual(parse_report(V,JOB,{**page,'rows':[{**row,'identity_text':text}]})['status'],'found')
+        self.assertFalse(report_url(url+'?other=1'))
+    def test_references_are_read_from_matched_row_without_inheriting_other_rows(self):
+        row={**ROW,'identity_text':'NM_005157.6(ABL1):c.944C>T NP_005148.2:p.Thr315Ile'}
+        other={**ROW,'gene':'OTHER','identity_text':'NM_999999.9:c.1A>G NP_999999.9:p.Met1Val'}
+        result=parse_report(V,JOB,{**PAGE,'rows':[other,row]})
+        self.assertEqual(result.get('transcripts'),['NM_005157.6'])
+        self.assertEqual(result.get('proteins'),['NP_005148.2'])
+        self.assertEqual(result.get('reference_hgvs'),['NM_005157.6(ABL1):c.944C>T','NP_005148.2:p.Thr315Ile'])
     def test_one_requested_protein_is_bound_to_own_pseudonymous_report_and_query(self):
         result=parse_report(V,JOB,PAGE)
         self.assertEqual(result['status'],'found');self.assertTrue(result['identity_verified'])

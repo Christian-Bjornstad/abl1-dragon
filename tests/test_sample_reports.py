@@ -15,7 +15,7 @@ class SampleReportTests(unittest.TestCase):
             outputs=export_sample_reports(session,rows,{},folder,providers=[])
             self.assertEqual([p.name for p in outputs],['DEMO-A_DRAGEN_Resultater.xlsx','PRØVE-2_DRAGEN_Resultater.xlsx'])
             first=load_workbook(outputs[0]);second=load_workbook(outputs[1])
-            self.assertEqual(first.sheetnames,['T315I']);self.assertEqual(second.sheetnames,['T315I','T315M'])
+            self.assertEqual(first.sheetnames,['Thr315Ile']);self.assertEqual(second.sheetnames,['Thr315Ile','Thr315Met'])
             text=' '.join(str(c.value or '') for s in first for row in s for c in row)
             self.assertNotIn('PRØVE-2',text);first.close();second.close()
     def test_unsafe_sample_names_cannot_escape_output_folder_and_collisions_are_unique(self):

@@ -36,4 +36,5 @@ reference/
 *.bai
 *.crai
 *.xlsx
+!assets/ELN_2025_Tabell5.xlsx
 *.csv

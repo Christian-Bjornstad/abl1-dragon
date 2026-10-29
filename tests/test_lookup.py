@@ -32,6 +32,29 @@ class FakeTransport:
 
 
 class LookupTests(unittest.TestCase):
+    def test_clinvar_reference_sequences_belong_only_to_the_exact_simple_allele(self):
+        references=('<HGVSlist><HGVS><NucleotideExpression sequenceAccessionVersion="NM_005157.6">'
+                    '<Expression>NM_005157.6(ABL1):c.944C&gt;T</Expression></NucleotideExpression>'
+                    '<ProteinExpression sequenceAccessionVersion="NP_005148.2"><Expression>NP_005148.2:p.Thr315Ile</Expression>'
+                    '</ProteinExpression></HGVS></HGVSlist>')
+        xml=clinvar_xml().replace(b'</SimpleAllele>',references.encode()+b'</SimpleAllele>')
+        unrelated=clinvar_xml(alt='G').replace(b'</SimpleAllele>',b'<HGVSlist><HGVS><Expression>NM_999999.9:c.1A&gt;G</Expression></HGVS></HGVSlist></SimpleAllele>')
+        result,_=self.clinvar(b'<ReleaseSet>'+unrelated+xml+b'</ReleaseSet>')
+        self.assertEqual(result['transcripts'],['NM_005157.6'])
+        self.assertEqual(result['proteins'],['NP_005148.2'])
+        self.assertEqual(result['reference_hgvs'],['NM_005157.6(ABL1):c.944C>T','NP_005148.2:p.Thr315Ile'])
+
+    def test_browser_reference_sequences_survive_service_projection(self):
+        class Adapter:
+            def lookup(self,provider,variant,**kwargs):
+                return {'status':'found','identity':canonical_identity(variant),'summary':'Exact',
+                        'transcripts':['NM_005157.6'],'proteins':['NP_005148.2'],
+                        'reference_hgvs':['NM_005157.6:c.944C>T']}
+        service,_=self.service(browser_adapter=Adapter())
+        result=service.lookup(VARIANT,['franklin'],settings={'provider_modes':{'franklin':'browser'}})[0]
+        self.assertEqual(result['transcripts'],['NM_005157.6'])
+        self.assertEqual(result['proteins'],['NP_005148.2'])
+        self.assertEqual(result['reference_hgvs'],['NM_005157.6:c.944C>T'])
     def test_closed_portal_failure_does_not_lose_other_provider_results(self):
         class Adapter:
             def lookup(self,*args,**kwargs):raise RuntimeError('private session diagnostic')

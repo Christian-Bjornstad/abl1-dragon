@@ -334,6 +334,7 @@ class NativeViewerTests(unittest.TestCase):
 
     def test_assets_are_local_and_disable_remote_genome_services(self):
         script = (ROOT / 'assets/igv/viewer.js').read_text(encoding='utf-8')
+        self.assertIn('colorBy: "strand"',script)
         self.assertIn('loadDefaultGenomes: false', script)
         self.assertNotIn('https://', script)
         self.assertIn('textContent', script)

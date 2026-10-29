@@ -6,7 +6,8 @@ from .workflow import allele_key
 
 FIELDS={'provider','status','summary','classification','evidence_level','accession','url','checked_at',
         'identity','identity_verified','identity_method','source_version','classifications','details',
-        'screenshot','screenshots','captured_at','screenshot_error','screenshot_reason'}
+        'screenshot','screenshots','captured_at','screenshot_error','screenshot_reason',
+        'transcripts','proteins','reference_hgvs'}
 
 
 class EvidenceStore:

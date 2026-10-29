@@ -33,7 +33,7 @@
         height: 420,
         order: 1,
         color: "#C3C3C3",
-        colorBy: "none",
+        colorBy: "strand",
         coverageColor: "#A8A8A8",
         coverageTrackHeight: 55,
         showMismatches: true,

@@ -18,6 +18,10 @@ PORTALS=('franklin','oncokb','mtbp')
 class Settings:
     def __init__(self,folder):
         self.path=Path(folder)/'settings.json'
+        from .watchlist import load_watchlist
+        self.watchlist_path=Path(folder)/'variant-watchlist.json'
+        try:self.watchlist=load_watchlist(self.watchlist_path)
+        except (OSError,ValueError):self.watchlist=[]
         reference=resource_root()/'reference/chr9.fa'
         self.providers=['clinvar'];pruned=False
         self.reference=str(reference) if reference.is_file() else ''
@@ -70,6 +74,14 @@ class SettingsPanel(QWidget):
         pick=QPushButton('Velg FASTA');pick.clicked.connect(self._pick_reference)
         row=QHBoxLayout();row.addWidget(self.reference,1);row.addWidget(pick)
         form.addRow('GRCh37 FASTA',row);layout.addLayout(form)
+        watch=QHBoxLayout()
+        self.watchlist_label=label(self._watchlist_text())
+        self.import_watchlist_button=QPushButton('Importer Excel-liste')
+        self.import_watchlist_button.clicked.connect(self._pick_watchlist)
+        self.clear_watchlist_button=QPushButton('Fjern liste')
+        self.clear_watchlist_button.clicked.connect(self._clear_watchlist)
+        watch.addWidget(self.watchlist_label,1);watch.addWidget(self.import_watchlist_button);watch.addWidget(self.clear_watchlist_button)
+        layout.addLayout(watch)
         grid=QGridLayout();grid.setHorizontalSpacing(20);grid.setVerticalSpacing(14)
         grid.addWidget(label('Database','CardTitle'),0,0);grid.addWidget(label('Innlogging','CardTitle'),0,1)
         grid.addWidget(label('E-post','CardTitle'),0,2);grid.addWidget(label('Passord','CardTitle'),0,3)
@@ -124,6 +136,27 @@ class SettingsPanel(QWidget):
     def _pick_reference(self):
         path,_=QFileDialog.getOpenFileName(self,'Velg GRCh37 FASTA','','FASTA (*.fa *.fasta *.fna)')
         if path:self.reference.setText(path);self._save()
+
+    def _watchlist_text(self):
+        return 'Variantliste: '+(str(len(self.settings.watchlist))+' varianter' if self.settings.watchlist else 'ikke lastet')
+
+    def _pick_watchlist(self):
+        path,_=QFileDialog.getOpenFileName(self,'Importer variantliste',str(resource_root()/'assets'),'Excel (*.xlsx)')
+        if path:self.import_watchlist(path)
+
+    def import_watchlist(self,path):
+        from .watchlist import read_watchlist,save_watchlist
+        try:
+            rows=read_watchlist(path);save_watchlist(self.settings.watchlist_path,rows)
+            self.settings.watchlist=rows;self.watchlist_label.setText(self._watchlist_text())
+            self.message.setText('Variantlisten er lastet.');self.changed.emit();return True
+        except (OSError,ValueError) as error:self.message.setText(str(error));return False
+
+    def _clear_watchlist(self):
+        try:
+            self.settings.watchlist_path.unlink(missing_ok=True);self.settings.watchlist=[]
+            self.watchlist_label.setText(self._watchlist_text());self.changed.emit()
+        except OSError:self.message.setText('Variantlisten kunne ikke fjernes.')
 
     def _save(self,*args):
         self.settings.providers=[p for p,c in self.enabled.items() if c.isChecked()]

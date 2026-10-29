@@ -6,6 +6,13 @@ from abl1_workstation.lookup_browser import PortalBrowser,login_status,_EdgeCont
 
 
 class PortalLoginFlowTests(unittest.TestCase):
+    def test_oncokb_responsive_account_marker_is_checked_without_header_assumption(self):
+        context=object.__new__(_EdgeContext);context.evaluate=Mock(return_value={})
+        context.auth_snapshot()
+        expression=context.evaluate.call_args.args[0]
+        self.assertIn('#collapsed-nav-account-menu',expression)
+        self.assertNotIn('header #account-menu',expression)
+        self.assertEqual(login_status('oncokb',{'url':'https://www.oncokb.org/','oncokb_account_visible':True})['status'],'logged_in')
     def test_saved_oncokb_account_is_confirmed_before_variant_query(self):
         variant={'assembly':'GRCh37','chrom':'9','pos':133748283,'ref':'C','alt':'T'}
         with tempfile.TemporaryDirectory() as folder:

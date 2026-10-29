@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from . import APP_NAME,__version__
 from .models import flags
 from .workflow import allele_key,row_key
+from .protein_names import protein_display
 
 PROVIDER_NAMES={'clinvar':'ClinVar','oncokb':'OncoKB','franklin':'Franklin','mtbp':'MTBP'}
 STATUS_NAMES={'not_found':'Ingen treff','login_required':'Innlogging kreves','license_required':'Tilgang kreves','error':'Feil','unsupported':'Ikke tilgjengelig','pending':'Analyse venter'}
@@ -19,6 +20,7 @@ def source_text(result):
     parts=[]
     for field in ('classification','evidence_level','summary'):
         value=result.get(field)
+        if field=='summary' and result.get('provider')=='franklin' and result.get('classification') and str(value).startswith('Franklin: identitetskontrollert portalresultat.'):continue
         if value and str(value) not in parts:parts.append(str(value))
     return ' · '.join(parts) or str(result.get('accession') or 'Treff')
 
@@ -30,7 +32,7 @@ def safe_text(value):
     return value
 
 def _sheet_name(variant,used):
-    raw=str(variant.get('protein_snv_alone') or variant.get('cdna') or variant.get('pos') or 'Variant')
+    raw=str(protein_display(variant.get('protein_snv_alone')) or variant.get('cdna') or variant.get('pos') or 'Variant')
     base=re.sub(r'[\[\]:*?/\\\x00-\x1f]','_',raw.removeprefix('p.')).strip(" '") or 'Variant'
     name=base[:31];number=1
     while name.casefold() in used:
@@ -119,10 +121,10 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','oncok
             if heading:cell.fill=PatternFill('solid',fgColor='7150A1')
             sheet.row_dimensions[row].height=28 if heading else 34
             return cell
-        block(1,str(variant.get('protein_snv_alone') or variant.get('cdna') or 'Variant')+' · '+str(variant.get('sample','')),heading=True)
-        block(2,APP_NAME+' · '+__version__+' · GRCh37 / NM_005157.6 · '+datetime.now().isoformat(timespec='minutes'))
+        block(1,str(protein_display(variant.get('protein_snv_alone')) or variant.get('cdna') or 'Variant')+' · '+str(variant.get('sample','')),heading=True)
+        block(2,APP_NAME+' · '+__version__+' · GRCh37 / NM_005157.6 / NP_005148.2 · '+datetime.now().isoformat(timespec='minutes'))
         facts=[('Prøve',variant.get('sample')),('Genomisk posisjon',f"{variant.get('chrom')}:{variant.get('pos')} {variant.get('ref')}>{variant.get('alt')}"),
-               ('cDNA',variant.get('cdna')),('Protein, enkeltallel',variant.get('protein_snv_alone')),
+               ('cDNA',variant.get('cdna')),('Protein, enkeltallel',protein_display(variant.get('protein_snv_alone'))),
                ('AF (%)',variant.get('format_af')*100 if variant.get('format_af') is not None else 'Ikke oppgitt'),
                ('ALT / DP',f"{variant.get('alt_ad','–')} / {variant.get('format_dp','–')}"),('FILTER',variant.get('filter'))]
         for row,(name,value) in enumerate(facts,4):
@@ -136,7 +138,12 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','oncok
         # All selected sources remain visible above the image appendix, on the
         # same variant sheet. No overview/data/attachment worksheet is created.
         sources={r['provider']:r for r in lookup_results.get(allele_key(variant),[])}
-        row=12;block(row,'Databaser',heading=True);row+=1
+        row=12
+        for entry in variant.get('eln_watchlist',[]):
+            block(row,'Variantliste · '+entry['source']+' · '+entry.get('scope',''));row+=2
+            if entry.get('recommended_tki'):
+                block(row,'TKI oppført i kildetabellen: '+entry['recommended_tki']);row+=2
+        block(row,'Databaser',heading=True);row+=1
         for provider in providers:
             result=sources.get(provider)
             sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=2)
@@ -164,6 +171,12 @@ def export_report(session,rows,lookup_results,path,*,providers=('clinvar','oncok
                 url=str(result.get('url') or '')
                 if urlsplit(url).scheme=='https':cell.hyperlink=url
             row+=2
+            if result and result.get('status')=='found':
+                for key,title in (('transcripts','Transkripter i kilden'),('proteins','Proteiner i kilden'),('reference_hgvs','HGVS i kilden')):
+                    values=result.get(key) or []
+                    if values:
+                        for start in range(0,len(values),4):
+                            block(row,title+': '+'; '.join(str(v) for v in values[start:start+4]));sheet.row_dimensions[row].height=64;row+=3
             pictures=screenshot_records(result)
             for picture in pictures:
                 caption=str(picture.get('label') or 'Variantresultat')

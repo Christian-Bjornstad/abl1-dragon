@@ -6,6 +6,7 @@ from setuptools.command.build_py import build_py
 
 ROOT=Path(__file__).resolve().parent
 RESOURCE_ITEMS=('assets/brand','assets/igv','assets/reference','desktop/data/pilot.json','engine/analyze.py','engine/reference.json',
+                'assets/ELN_2025_Tabell5.xlsx','assets/ELN_2025_Tabell5.md',
                 'engine/read_evidence.py','engine/requirements-read-evidence.txt',
                 'app/data/knowledge.json','app/data/igv-manifest.json')
 

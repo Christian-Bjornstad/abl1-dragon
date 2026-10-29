@@ -15,6 +15,8 @@ from .report import export_sample_reports,sample_report_paths,PROVIDER_NAMES
 from .database_browser import EdgeBrowser
 from .lookup_browser import PortalBrowser
 from .settings import Settings,SettingsPanel
+from .protein_names import protein_display
+from .watchlist import matches
 from .ui_common import STYLE,label,button,initial_window_geometry
 
 
@@ -151,6 +153,12 @@ class MainWindow(QMainWindow):
         self.event_log.appendPlainText(datetime.now().strftime('%H:%M:%S')+'  '+str(text))
 
     def _settings_changed(self):
+        if self.session:
+            rows=[dict(v,eln_watchlist=matches(v,self.settings.watchlist)) for v in self.session.data['variants']]
+            self.variant_model.rows=rows
+            if rows:self.variant_model.dataChanged.emit(self.variant_model.index(0,0),self.variant_model.index(len(rows)-1,8))
+            current=self.variant_table.currentIndex()
+            if current.isValid():self._selected(current,current)
         self._render_sources();self._update_actions()
 
     def choose_folder(self):
@@ -179,7 +187,7 @@ class MainWindow(QMainWindow):
                 if restored:self.lookup_results[key]=restored
         self.navigate(0);self.event_log.clear()
         self.log_event(f"Analyse lastet: {len(session.data['samples'])} prøver, {len(session.data['variants'])} VCF-kall.")
-        self.variant_model.replace(session.data['variants'])
+        self.variant_model.replace([dict(v,eln_watchlist=matches(v,self.settings.watchlist)) for v in session.data['variants']])
         with QSignalBlocker(self.sample_filter):
             self.sample_filter.clear();self.sample_filter.addItem('Alle prøver')
             self.sample_filter.addItems([s['sample'] for s in session.data['samples']])
@@ -227,7 +235,7 @@ class MainWindow(QMainWindow):
         if not current.isValid():self._clear_variant();return
         self.current_variant=self.variant_model.rows[self.variant_proxy.mapToSource(current).row()]
         v=self.current_variant
-        self.variant_title.setText(f"{v['sample']}  ·  {v.get('cdna') or str(v['pos'])}  ·  {v.get('protein_snv_alone') or v['ref']+'>'+v['alt']}")
+        self.variant_title.setText(f"{v['sample']}  ·  {v.get('cdna') or str(v['pos'])}  ·  {protein_display(v.get('protein_snv_alone')) or v['ref']+'>'+v['alt']}")
         self.variant_info.setText(f"{v['chrom']}:{v['pos']} {v['ref']}>{v['alt']}  ·  {v.get('filter') or '–'}")
         self.igv_title.setText(self.variant_title.text());self.read_viewer.clear()
         self._render_sources();self._update_actions()
@@ -299,7 +307,7 @@ class MainWindow(QMainWindow):
                 if current.get('identity'):receipts.save(variant,current)
                 updated.append(current)
             return key,updated
-        self._start_task(operation,self._lookup_finished,'Henter bilder fra åpne databasesider for '+str(variant.get('protein_snv_alone') or variant['pos'])+' …')
+        self._start_task(operation,self._lookup_finished,'Henter bilder fra åpne databasesider for '+str(protein_display(variant.get('protein_snv_alone')) or variant['pos'])+' …')
 
     def _render_sources(self):
         while self.source_layout.count():
@@ -369,7 +377,7 @@ class MainWindow(QMainWindow):
             self._start_task(operation,saved,'Lagrer Excel per prøve …')
             return
         variant=self._export['queue'].pop(0);self._export['current']=variant
-        self.igv_title.setText(f"{variant['sample']} · {variant.get('protein_snv_alone') or variant.get('cdna') or variant['pos']}")
+        self.igv_title.setText(f"{variant['sample']} · {protein_display(variant.get('protein_snv_alone')) or variant.get('cdna') or variant['pos']}")
         alignment=self.run_files.alignments.get(variant['sample']) if self.run_files else None
         reference=Path(self.settings.reference) if self.settings.reference else self.run_files.reference_fasta if self.run_files else None
         if not alignment or not reference:
