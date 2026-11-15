@@ -67,6 +67,11 @@ class PublicWindowTests(unittest.TestCase):
         self.assertIn('nettleserkontrollen',w.source_badges['clinvar'].toolTip())
         self.assertIn('Fullfør nettleserkontrollen',w.event_log.toPlainText())
         self.assertTrue(w.retry_images_button.isEnabled())
+
+    def test_database_progress_shows_active_source_without_creating_a_result(self):
+        w=self.window;w._lookup_finished((None,'oncokb'))
+        self.assertIn('OncoKB',w.event_log.toPlainText())
+        self.assertEqual(w.lookup_results,{})
     def test_export_button_remains_inside_viewport_after_loading_all_sources(self):
         from PyQt6.QtCore import QPoint
         w=self.window;w.settings.providers=['clinvar','oncokb','franklin','mtbp']

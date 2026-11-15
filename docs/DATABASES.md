@@ -3,6 +3,10 @@
 Merk varianter og velg **Søk i databaser**. Samme GRCh37-allel søkes én gang på
 tvers av prøver. Resultat og bilder lagres lokalt etter hvert som de blir klare.
 Et nytt søk henter nye svar; tidligere oppslag gjenopprettes med sitt tidspunkt.
+Når alle bilder fra en kilde er lagret, lukkes appens søkevindu automatisk.
+Profilen beholdes. Ved innlogging, nettleserkontroll eller delvis bildeuttak blir
+vinduet stående slik at oppslaget kan fullføres. Ferdige bilder fra andre kilder
+beholdes når **Hent bilder fra åpne sider** brukes.
 
 | Kilde | Oppslag og bilder |
 | --- | --- |
@@ -11,8 +15,10 @@ Et nytt søk henter nye svar; tidligere oppslag gjenopprettes med sitt tidspunkt
 | Franklin | Hjemmesøk med hg19 og Somatic, som i Archer. ACMG-/onkogenisitetsvisninger, evidenskort og tilgjengelige prediksjons-/populasjonsvisninger lagres med egne bildetekster. |
 | MTBP | Én variant og tilfeldig DRAGEN-ID per analyse, med sykdomskategorien Blood. Et eksplisitt avvist transkriptsøk kan prøves med GRCh37-HGVS. Uklart svar sendes aldri på nytt automatisk. |
 
-MTBP-analysen kan bruke tid. **Analyse venter** betyr at neste søk skal hente samme
-analyse. Rapporten oppgir om MTBP-treffet bygger på protein, cDNA eller kontrollert GRCh37-allel. Private
+MTBP-analysen kan bruke tid. Appen venter normalt inntil 90 sekunder etter
+innsending. **Analyse venter** betyr at neste søk skal hente samme analyse;
+en rapport som er fjernet fra kontoen erstattes ikke med en annen rapport.
+Rapporten oppgir om MTBP-treffet bygger på protein, cDNA eller kontrollert GRCh37-allel. Private
 MTBP-rapportadresser eksporteres ikke. Rapporter slettes ikke fra MTBP av appen.
 
 Excel lagres i én fil per prøve, `<prøvenavn>_DRAGEN_Resultater.xlsx`, med
@@ -26,6 +32,20 @@ i kildesvaret når teksten finnes i rapporten.
 
 ## Verifisert under utviklingen
 
+- 15. november 2026: ClinVar ga fem bilder og OncoKB tre, med automatisk
+  lukking etter lokal lagring. Franklin ga alle 18 bilder fra den offentlige
+  Thr315Ile-siden. Den lagrede Franklin-innloggingen ble avvist av nettstedet;
+  innlogget tilgang er derfor ikke bekreftet i denne testen. Appen viser nå
+  avvist innlogging og går ikke videre anonymt når en konto er lagret.
+- MTBP: offentlig Met244Val ga ett lesbart variantbilde og automatisk lukking.
+  Ny Edge-oppstart hentet samme analyse uten ny innsending. Excel-bilder og
+  arknavn ble kontrollert for disse oppslagene. Ingen pasientfiler ble sendt.
+- Appens faktiske søkeknapp og bakgrunnsjobb ble kjørt to ganger på rad med
+  ClinVar og OncoKB. Begge rundene ga åtte bilder, lukkede søkevindu og
+  Excel-arket Thr315Ile med alle åtte bilder.
+- Regresjonstester dekker automatisk lukking etter lagring, gjenåpning,
+  midlertidig mislykkede bilder, uferdige Franklin-paneler, avbrutt bildeuttak,
+  negativt resultat under bildeuttak og MTBP-analyser etter omstart.
 - Innlogget T315I-oppslag i ekte Edge: Franklin med 18 bilder, OncoKB med tre
   sideutsnitt og MTBP med kontrollert genomisk treff og variantbilde. Testet
   29. oktober 2026 med offentlig allel; ingen pasientfiler sendt.

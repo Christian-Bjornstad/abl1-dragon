@@ -65,7 +65,7 @@ ligger ikke i innstillingsfilen og fylles bare inn i kontrollerte innloggingsskj
 på riktig databasevert. MFA og endrede/eksterne SSO-skjemaer fullføres i Edge.
 **Glem** fjerner den lagrede innloggingen; aktive nettstedssesjoner kan fortsatt være innlogget.
 Opplysninger skrevet før **Åpne / logg inn** lagres automatisk. Appen venter på
-bekreftet innlogging etter innsending. En lagret OncoKB-konto brukes før variantsøket.
+bekreftet innlogging etter innsending. Lagret OncoKB-/Franklin-konto brukes før variantsøket.
 Prøvenavn, VCF og alignments sendes ikke til databasene.
 
 **Eksporter Excel** lager én fil per prøve: `<prøvenavn>_DRAGEN_Resultater.xlsx`.
@@ -78,6 +78,8 @@ Databasebilder tas bare når nettsiden bekrefter riktig allel; et treff i tekst 
 ikke tilstrekkelig. Kildestatus viser om bildet er klart. Etter innlogging eller
 nettleserkontroll: velg varianten og trykk **Hent bilder fra åpne sider**.
 Knappen bruker de åpne databasesidene uten å starte søket på nytt.
+Søkevinduet lukkes automatisk når kildebildene er lagret. Ved manglende
+innlogging eller ufullført bildeuttak blir vinduet stående.
 Databaseoppslag krever nett og eventuell konto/tilgang.
 [Kilder og bildeuttak](docs/DATABASES.md).
 Franklin-bilder omfatter tilgjengelige ACMG-/onkogenisitetsvisninger, evidenskort,
@@ -85,7 +87,7 @@ prediksjoner og populasjonsfrekvenser. Manglende delbilder angis i rapporten.
 MTBP sender én variant per analyse med et tilfeldig DRAGEN-ID og sykdomskategorien
 **Blood**. Prøvenavnet sendes ikke. Ved **Analyse venter**: søk igjen for å hente
 samme analyse. Egen MTBP-rapport beholdes i portalen; appen sletter ingen rapporter.
-MTBP-rapporten angir om kildetreffet er basert på protein eller cDNA.
+MTBP-rapporten angir om kildetreffet er basert på protein, cDNA eller kontrollert GRCh37-allel.
 
 Annotasjon bruker GRCh37/hg19 og NM_005157.6. PASS er caller-status.
 Kontrollkandidater er teknisk sortering uten validert deteksjonsgrense.

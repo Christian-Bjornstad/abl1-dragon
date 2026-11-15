@@ -6,6 +6,21 @@ from abl1_workstation.lookup_browser import PortalBrowser,login_status,_EdgeCont
 
 
 class PortalLoginFlowTests(unittest.TestCase):
+    def test_mtbp_authenticated_navbar_confirms_login_with_closed_user_menu(self):
+        page={'url':'https://mtbp.org/patients/','mtbp_account_visible':True,
+              'logout_visible':False,'login_visible':False}
+        self.assertEqual(login_status('mtbp',page)['status'],'logged_in')
+        for change in ({'mtbp_account_visible':False},{'url':'https://example.invalid/patients/'},
+                       {'url':'https://mtbp.org/keycloak/realms/MTBP/protocol/openid-connect/auth'},
+                       {'password_visible':True},{'login_visible':True}):
+            self.assertNotEqual(login_status('mtbp',{**page,**change})['status'],'logged_in')
+        context=object.__new__(_EdgeContext);context.evaluate=Mock(return_value={})
+        context.auth_snapshot()
+        expression=context.evaluate.call_args.args[0]
+        self.assertIn('mtbp_account_visible',expression)
+        self.assertIn('.navbar-right .user-dropdown',expression)
+        self.assertIn('logoutKeycloak',expression)
+        self.assertNotIn('document.body',expression)
     def test_oncokb_responsive_account_marker_is_checked_without_header_assumption(self):
         context=object.__new__(_EdgeContext);context.evaluate=Mock(return_value={})
         context.auth_snapshot()

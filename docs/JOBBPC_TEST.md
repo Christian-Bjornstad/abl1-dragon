@@ -24,6 +24,13 @@ Oppstart følger PRONTO: Ivanti hvis tilgjengelig, ellers eksplisitt valgt lokal
 - Fullfør eventuell databaseinnlogging under **Innstillinger**. Tilgang til kildene kan kreve egne avtaler.
 - OncoKB: kontomenyen i nettstedets toppfelt bekrefter innlogging selv om utloggingsmenyen er lukket. Et verifisert variantbilde kan lagres selv om klassifikasjonsetiketten ikke kan leses automatisk; dette angis i rapporten.
 - Lukk appens databasevindu og åpne det på nytt fra **Innstillinger**. Andre databaseøkter skal beholde sin innloggingsstatus.
+- Ved vanlig søk skal vinduet lukkes etter at alle kildebildene er lagret.
+  Kjør samme søk igjen og kontroller at Edge åpner og lukker som før. Ved
+  manuell innlogging/kontroll skal vinduet bli stående. **Økt lagret · sist
+  bekreftet** viser tidligere bekreftet innlogging etter automatisk lukking.
+- Franklin: ved avvist e-post/passord, oppdater kontoen i **Innstillinger**.
+  En lagret konto som blir avvist skal ikke gi et anonymt oppslag som om
+  innloggingen hadde fungert.
 - Etter innlogging eller manuell nettleserkontroll: vis riktig variant i databasevinduet og bruk **Hent bilder fra åpne sider**. Kontroller at kildestatus viser **bilde klart**, og at bildet følger med i Excel.
 - Franklin: kontroller ACMG-/onkogenisitetsbilder og navngitte evidenskort i variantarket. Et delvis uttrekk skal varsles, også når første bilde er tilgjengelig.
 - MTBP: velg kilden og søk én variant. Analysen skal bruke tilfeldig DRAGEN-ID og **Blood**. Ved **Analyse venter** skal neste søk hente samme analyse. Kontroller at kildebildet gjelder riktig ABL1-variant, og at ingen privat MTBP-rapportadresse følger med i Excel.

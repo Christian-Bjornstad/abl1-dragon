@@ -276,13 +276,15 @@ class MainWindow(QMainWindow):
                         try:receipts.save(v,item)
                         except OSError:item={**item,'persistence_error':'Databaseresultatet kunne ikke lagres lokalt.'}
                     emit((key,[item]));delivered.add(item['provider'])
-                found=service.lookup(v,providers,settings={'provider_modes':modes},completed=completed)
+                found=service.lookup(v,providers,settings={'provider_modes':modes},completed=completed,progress=lambda p:emit((None,p)))
                 for item in found:
                     if item['provider'] not in delivered:completed(item)
         self._start_task(operation,lambda _:None,f'Søker i databaser: {len(rows)} merkede alleler …',progress_callback=self._lookup_finished)
 
     def _lookup_finished(self,result):
         key,results=result
+        if key is None:
+            self.log_event('Søker i '+PROVIDER_NAMES.get(results,results)+' …');return
         merged={item['provider']:item for item in self.lookup_results.get(key,[])}
         merged.update({item['provider']:item for item in results})
         self.lookup_results[key]=list(merged.values());self._render_sources()

@@ -14,6 +14,7 @@ from .browser_evidence import evaluate
 AMINO=dict(zip(('Ala Arg Asn Asp Cys Gln Glu Gly His Ile Leu Lys Met Phe Pro Ser Thr Trp Tyr Val').split(),'ARNDCQEGHILKMFPSTWYV'))
 REPORT=re.compile(r'/patients/[A-Za-z0-9_-]+/(?:sample/[A-Za-z0-9_-]+/)?report/[0-9]+/?')
 class SubmissionNotSent(ValueError):pass
+class _LoginRequired(RuntimeError):pass
 
 
 def short_protein(value):
@@ -158,14 +159,27 @@ def read_report(context):
 
 
 def find_report(context,job):
-    page=read_report(context)
-    if page and job['analysis_id'] in page['text'] and page['ready_state']=='complete' and page['rows']:return page
+    # A resumed job can start in a fresh about:blank tab. Establish the trusted
+    # destination before evaluating source-specific DOM, including after login.
+    current=context.auth_snapshot() or {};url=current.get('url','')
+    if url=='about:blank':
+        if not getattr(context,'_dragen_mtbp_listing',False):
+            context._dragen_mtbp_listing=True;context.navigate('https://mtbp.org/patients/')
+        return None
+    parts=urlsplit(url)
+    if parts.scheme!='https' or parts.netloc!='mtbp.org':raise ValueError('Uventet MTBP-side.')
+    if current.get('password_visible') or current.get('login_visible') or re.fullmatch(r'/(?:login|sign-?in|auth)/?',parts.path,re.I):
+        raise _LoginRequired('MTBP krever innlogging.')
+    if current.get('ready_state')!='complete':return None
+    if report_url(url):
+        page=read_report(context)
+        if page and job['analysis_id'] in page['text'] and page['ready_state']=='complete' and page['rows']:return page
     # Query only the exact random ID. Never copy the account's report list or
     # another patient's name into a receipt, screenshot or Excel workbook.
-    current=context.auth_snapshot() or {}
     owned=getattr(context,'_dragen_mtbp_report',None)
     if owned==(job['analysis_id'],current.get('url')):return None
-    if urlsplit(current.get('url','')).path.rstrip('/')!='/patients':context.navigate('https://mtbp.org/patients/')
+    if parts.path.rstrip('/')!='/patients':
+        context._dragen_mtbp_listing=True;context.navigate('https://mtbp.org/patients/');return None
     target=evaluate(context,'mtbp',r"""
       if(location.pathname.replace(/\/$/,'')!=='/patients'||document.readyState!=='complete')return null;
       const id="""+json.dumps(job['analysis_id'])+""";
@@ -203,7 +217,7 @@ def capture(context,variant,job,page,result,root):
         after=read_report(context)
         if not after or after['url']!=before['url'] or after['rows']!=before['rows'] or parse_report(variant,job,after)['status']!='found':raise ValueError('MTBP-resultatet ble endret under bildeuttak.')
         captured=datetime.now(timezone.utc).isoformat()
-        return {**result,'screenshot':str(path),'captured_at':captured,'screenshots':[
+        return {**result,'screenshot':str(path),'captured_at':captured,'capture_complete':True,'screenshots':[
             {'path':str(path),'label':'MTBP · '+job['cancer_type']+' · alteration-centric evidence','url':'','captured_at':captured}]}
     except (OSError,ValueError,RuntimeError,TimeoutError):
         if path:path.unlink(missing_ok=True)
@@ -222,7 +236,7 @@ def lookup_mtbp(browser,variant,settings):
                 or canonical_identity(job.get('identity') or {})!=canonical_identity(variant)
                 or job.get('query') not in {query,'chr'+genomic_hgvs(variant)} or job.get('cancer_type')!='Blood'):raise ValueError('Ugyldig MTBP-variant.')
     def pending():
-        return base_result(variant,'pending','MTBP-analysen er ikke ferdig eller innlogging må fullføres. Søk igjen for å hente samme analyse.',
+        return base_result(variant,'pending','MTBP-rapporten er ikke klar eller den lagrede analysen finnes ikke i rapportlisten. Søk igjen for å hente samme analyse.',
                            accession=job['query'],details={'analysis_id':job['analysis_id'],'cancer_type':job['cancer_type']})
     if job is None:
         cancer_type=str(settings.get('mtbp_cancer_type') or 'Blood')
@@ -248,10 +262,14 @@ def lookup_mtbp(browser,variant,settings):
                 path.unlink(missing_ok=True)
                 return base_result(variant,'error','MTBP kunne ikke kartlegge varianten med transkript eller GRCh37-HGVS.')
             return pending()
-    timeout=min(120,max(0,float(settings.get('mtbp_wait_seconds',20))))
-    deadline=time.monotonic()+timeout
+    timeout=min(120,max(0,float(settings.get('mtbp_wait_seconds',90))))
+    deadline=time.monotonic()+timeout;login_attempted=False
     while True:
-        page=find_report(context,job)
+        try:page=find_report(context,job)
+        except _LoginRequired:
+            if login_attempted or not browser._saved_login('mtbp',context):
+                return base_result(variant,'login_required','MTBP-innloggingen kunne ikke bekreftes. Fullfør innlogging i appens Edge-vindu og søk igjen for å hente samme analyse.')
+            login_attempted=True;context._dragen_mtbp_listing=True;context.navigate('https://mtbp.org/patients/');page=None
         if page is not None:
             result=parse_report(variant,job,page)
             if result['status']=='found':

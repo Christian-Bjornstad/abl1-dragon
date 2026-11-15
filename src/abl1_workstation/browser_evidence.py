@@ -11,6 +11,9 @@ HOSTS={'clinvar':['www.ncbi.nlm.nih.gov'],
        'mtbp':['mtbp.org']}
 VISIBLE="""const visible=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>0;};"""
 
+class CaptureViewError(RuntimeError):
+    """A local, credential-free explanation safe to show in the app/report."""
+
 
 def evaluate(context,provider,body):
     return context.evaluate("(()=>{if(location.protocol!=='https:'||!"+json.dumps(HOSTS[provider])+".includes(location.hostname)||location.port||location.username||location.password)throw Error('Unexpected source page');"+VISIBLE+body+"})()")
@@ -35,7 +38,7 @@ def dismiss_cookies(context,provider):
     blocked=evaluate(context,provider,"""
       return [...document.querySelectorAll('#onetrust-banner-sdk,#CybotCookiebotDialog,[class*=cookie-consent],[class*=consent-banner]')]
         .some(e=>visible(e)&&/cookie|privacy/i.test(e.innerText)&&[...e.querySelectorAll('button')].some(visible));""")
-    if blocked:raise RuntimeError('Et cookie-vindu dekker resultatet. Lukk det i Edge og hent bildene igjen.')
+    if blocked:raise CaptureViewError('Et cookie-vindu dekker resultatet. Lukk det i Edge og hent bildene igjen.')
 
 
 def activate(context,label):
@@ -57,10 +60,12 @@ def activate(context,label):
 
 
 def wait_panel(context,selector):
-    for _ in range(20):
-        if evaluate(context,'franklin',"return [...document.querySelectorAll("+json.dumps(selector)+")].some(visible);"):return
+    # Angular mounts the panel before its evidence arrives. A visible empty
+    # container cannot supply a meaningful screenshot, especially on a slow PC.
+    for _ in range(100):
+        if evaluate(context,'franklin',"return [...document.querySelectorAll("+json.dumps(selector)+")].some(e=>visible(e)&&(e.innerText||'').trim().length>0);"):return
         time.sleep(.25)
-    raise RuntimeError('Resultatpanelet ble ikke klart.')
+    raise CaptureViewError('Franklin-panelet ble ikke ferdig lastet innen 25 sekunder.')
 
 
 def overview_clip(context,provider):
@@ -118,17 +123,17 @@ def card_view(context,selector,index):
 
 
 def classification_views(context,label,panel,categories):
-    if not activate(context,label):raise RuntimeError('Klassifikasjonsfanen finnes ikke.')
-    wait_panel(context,panel);time.sleep(.25)
+    if not activate(context,label):raise CaptureViewError('Franklin-fanen '+label+' finnes ikke.')
+    wait_panel(context,categories);time.sleep(.25)
     yield label+' overview',None
     titles=evaluate(context,'franklin',"return [...document.querySelectorAll("+json.dumps(categories)+")].filter(visible).map(e=>(e.innerText||'').trim().split('\\n')[0].slice(0,120));") or []
-    if not titles:raise RuntimeError('Evidenskortene kunne ikke leses.')
+    if not titles:raise CaptureViewError('Franklin-evidenskortene kunne ikke leses.')
     for index,title in enumerate(titles[:24]):
         try:
             clip=card_view(context,categories,index)
             yield label+' evidence: '+str(title or index+1),clip
         finally:evaluate(context,'franklin',"document.getElementById('dragen-evidence-capture')?.remove();return true;")
-    if len(titles)>24:raise RuntimeError('Flere enn 24 evidenskort; bildeuttrekket er avkortet.')
+    if len(titles)>24:raise CaptureViewError('Flere enn 24 evidenskort; bildeuttrekket er avkortet.')
 
 
 def evidence_views(context,provider):
@@ -143,7 +148,7 @@ def evidence_views(context,provider):
     failures=[]
     try:
         if activate(context,'Computed Classification'):
-            for _ in range(32):
+            for _ in range(100):
                 ready=evaluate(context,'franklin',"return [...document.querySelectorAll('span,div')].some(e=>visible(e)&&e.children.length===0&&e.innerText.trim()==='ACMG Classification');")
                 if ready:break
                 time.sleep(.25)
@@ -154,7 +159,7 @@ def evidence_views(context,provider):
         parts=urlsplit(original_url)
         if parts.hostname=='franklin.genoox.com' and '/clinical-db/variant/' in parts.path:
             context.navigate(urlunsplit((parts.scheme,parts.netloc,parts.path,'app=assessment-tools','')))
-            for _ in range(24):
+            for _ in range(100):
                 ready=evaluate(context,'franklin',"return [...document.querySelectorAll('h1,h2,h3,h4,[role=heading]')].filter(visible).some(e=>e.innerText.trim()==='Predictions');")
                 if ready:break
                 time.sleep(.25)
@@ -168,4 +173,4 @@ def evidence_views(context,provider):
         # Never move a page that the user navigated away from during capture.
         current=context.snapshot() or {}
         if urlsplit(current.get('url','')).path==urlsplit(original_url).path:context.navigate(original_url)
-    if failures:raise RuntimeError('Noen Franklin-visninger mangler: '+', '.join(failures))
+    if failures:raise CaptureViewError('Noen Franklin-visninger mangler: '+', '.join(failures)+'. Kjør søket igjen.')

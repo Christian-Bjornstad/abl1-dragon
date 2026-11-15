@@ -60,18 +60,22 @@ def login_status(provider,snapshot):
     if not url:return {**result,'reason':'snapshot_unavailable'}
     if not _provider_page(provider,url):return {**result,'reason':'unsafe_page'}
     parts=urlsplit(url)
+    if snapshot.get('login_error_visible'):
+        return {**result,'status':'logged_out','summary':'E-post eller passord ble avvist','reason':'credentials_rejected'}
     if snapshot.get('password_visible') or re.search(r'/(?:login|sign-?in|auth|log-?out|sign-?out)(?:/|$)',parts.path,re.I):
         return {**result,'status':'logged_out','summary':'Ikke innlogget'}
     if snapshot.get('logout_visible'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
     if provider=='oncokb' and snapshot.get('oncokb_account_visible') is True:
         return {**result,'status':'logged_in','summary':'Innlogget'}
+    if snapshot.get('login_visible'):
+        return {**result,'status':'logged_out','summary':'Ikke innlogget'}
     if provider=='franklin' and parts.path.startswith('/clinical-db/') and snapshot.get('franklin_search'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
     if provider=='mtbp' and parts.path.rstrip('/')=='/analyse' and snapshot.get('mtbp_form'):
         return {**result,'status':'logged_in','summary':'Innlogget'}
-    if snapshot.get('login_visible'):
-        return {**result,'status':'logged_out','summary':'Ikke innlogget'}
+    if provider=='mtbp' and snapshot.get('mtbp_account_visible') is True and not snapshot.get('login_visible'):
+        return {**result,'status':'logged_in','summary':'Innlogget'}
     return {**result,'reason':'no_auth_markers'}
 
 
@@ -447,10 +451,22 @@ class _EdgeContext:
             page_busy:Array.from(document.querySelectorAll('[aria-busy=true]')).some(visible),"""+text_field+result_fields+"""
             challenge_visible:Array.from(document.querySelectorAll('iframe[src*="/recaptcha/"][src*="/bframe"],iframe[title*="challenge" i]')).some(visible),
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
+            login_error_visible:Array.from(document.querySelectorAll('form.sign-in-form,.login-form,.login-container')).some(e=>visible(e)&&/the email or password is not correct|invalid (?:email|password|credentials)|incorrect (?:email|password)/i.test(e.innerText)),
             franklin_search:Array.from(document.querySelectorAll("input[placeholder='Enter variant, gene or select an example above']")).some(visible),
             franklin_result_visible:location.hostname==='franklin.genoox.com'&&Array.from(document.querySelectorAll('gnx-result-page,gnx-oncogenic-classification-app,[role=tabpanel]')).some(visible),
             franklin_genome_links:location.hostname==='franklin.genoox.com'?Array.from(document.querySelectorAll('a[href]')).filter(e=>visible(e)&&e.href.startsWith('https://genome.ucsc.edu/')).map(e=>e.href):[],
             mtbp_form:Array.from(document.querySelectorAll('#variant-input')).some(visible),
+            mtbp_account_visible:location.protocol==='https:'&&location.hostname==='mtbp.org'&&!location.port&&(()=>{
+              const menus=[...document.querySelectorAll('.navbar .navbar-right .user-dropdown')].filter(visible);
+              if(menus.length!==1)return false;
+              const menu=menus[0],button=menu.querySelector('button.user-button[data-dropdown-trigger="user"]');
+              const logout=menu.querySelector('[data-dropdown-menu="user"] a[href="/auth/?logoutKeycloak"]');
+              const navbar=menu.closest('.navbar');
+              return !!button&&visible(button)&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(button.innerText.trim())&&
+                !!logout&&logout.innerText.trim()==='Logout'&&
+                [...navbar.querySelectorAll('.navbar-center a[href="/patients/"]')].some(e=>visible(e)&&e.innerText.trim()==='Reports List')&&
+                [...navbar.querySelectorAll('.navbar-center a[href="/analyse/"]')].some(e=>visible(e)&&e.innerText.trim()==='Analyse Variants');
+            })(),
             oncokb_account_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('#account-menu,#collapsed-nav-account-menu')).some(e=>(e.innerText||'').trim()==='Account'),
             oncokb_result_visible:location.hostname==='www.oncokb.org'&&Array.from(document.querySelectorAll('h1')).some(x=>visible(x)&&/\\bABL1\\b/.test(x.innerText||''))&&Array.from(document.querySelectorAll('#clinical-implications')).some(visible),
             logout_visible:controls.some(x=>/^(?:log\\s*out|sign\\s*out|logout)$/i.test(caption(x))),
@@ -599,24 +615,41 @@ class _EdgeContext:
         except (OSError,RuntimeError,TimeoutError,ValueError,KeyError):return False
 
     def close(self):
-        if self._connection:
-            try:self._connection.call('Browser.close',timeout=3)
-            except (OSError,RuntimeError,TimeoutError):pass
-            self._connection.close();self._connection=None
-        if self._process:
-            try:self._process.wait(timeout=4)
-            except subprocess.TimeoutExpired:self._process.terminate()
-            self._process=None
-        port_file=getattr(self,'_port_file',None)
-        if port_file is not None and self._connection is None:
-            # Our owned browser has been asked to exit before removing its
-            # bootstrap marker. No ordinary Edge profile/process is touched.
-            try:_clear_stale_endpoint(self.profile)
-            except (OSError,RuntimeError):pass
-        if self._lease is not None:
-            self._lease.close();self._lease=None
-        if self._startup_stderr is not None:
-            self._startup_stderr.close();self._startup_stderr=None
+        try:
+            if self._connection:
+                try:self._connection.call('Browser.close',timeout=3)
+                except (OSError,RuntimeError,TimeoutError):pass
+                try:self._connection.close()
+                except OSError:pass
+                self._connection=None
+            if self._process:
+                try:
+                    try:self._process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        # This handle is the process launched for our leased
+                        # profile. Never enumerate or terminate other Edge PIDs.
+                        self._process.terminate()
+                        try:self._process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            self._process.kill();self._process.wait(timeout=1)
+                except (OSError,subprocess.TimeoutExpired):pass
+                self._process=None
+            if getattr(self,'_port_file',None) is not None:
+                deadline=time.monotonic()+8
+                while time.monotonic()<deadline:
+                    try:_clear_stale_endpoint(self.profile)
+                    except (OSError,RuntimeError):time.sleep(.1)
+                    else:
+                        # Edge may close its listener before profile database
+                        # handles drain. Retain the lease through that flush.
+                        time.sleep(.5);break
+                # An inconclusive/live marker stays intact. A later launch
+                # must still pass the existing stale-endpoint ownership guard.
+        finally:
+            if self._lease is not None:
+                self._lease.close();self._lease=None
+            if self._startup_stderr is not None:
+                self._startup_stderr.close();self._startup_stderr=None
 
 
 class PortalBrowser:
@@ -638,7 +671,9 @@ class PortalBrowser:
         if not email or not password:return False
         submitted=False
         for attempt in range(45):
-            if self.status(provider).get('status')=='logged_in':return True
+            auth=self.status(provider)
+            if auth.get('status')=='logged_in':return True
+            if submitted and auth.get('reason')=='credentials_rejected':return False
             if not submitted:
                 try:
                     if hasattr(type(context),'dismiss_login_cookies'):context.dismiss_login_cookies(provider)
@@ -704,6 +739,10 @@ class PortalBrowser:
             checked=datetime.now(timezone.utc).isoformat()
             context=self._contexts.get(provider)
             if context is None:
+                previous=self._confirmations.get(provider)
+                if previous and previous[0] is None:
+                    clock=datetime.fromisoformat(previous[1]).astimezone().strftime('%H:%M')
+                    return {'status':'last_confirmed','summary':'Økt lagret · sist bekreftet '+clock,'checked_at':checked,'confirmed_at':previous[1]}
                 self._confirmations.pop(provider,None)
                 return {'status':'closed','summary':'Vindu lukket','checked_at':checked}
             try:
@@ -735,6 +774,7 @@ class PortalBrowser:
 
     def _capture(self,provider,variant,context,result):
         from .workflow import allele_key
+        from .browser_evidence import CaptureViewError
         if not hasattr(context,'capture_png'):return self._capture_error(result,'capture_unsupported','Nettleseren støtter ikke bildeuttak.')
         path=None;updated=dict(result);records=[]
         try:
@@ -750,8 +790,18 @@ class PortalBrowser:
                     problem=self._capture_problem(provider,variant,context.snapshot() or {})
                 if problem:return self._capture_error(updated,*problem)
                 path=root/(provider+'-'+uuid.uuid4().hex+'.png')
-                if clip is None:context.capture_png(path)
-                else:context.capture_png(path,clip=clip)
+                for attempt in range(2):
+                    if attempt:
+                        problem=self._capture_problem(provider,variant,context.snapshot() or {})
+                        if problem:return self._capture_error(updated,*problem)
+                    try:
+                        if clip is None:context.capture_png(path)
+                        else:context.capture_png(path,clip=clip)
+                        break
+                    except (ValueError,RuntimeError,TimeoutError):
+                        path.unlink(missing_ok=True)
+                        if attempt:raise
+                        time.sleep(1)
                 snapshot=context.snapshot() or {}
                 problem=self._capture_problem(provider,variant,snapshot)
                 if problem:
@@ -772,12 +822,18 @@ class PortalBrowser:
                         updated['summary']='Franklin: identitetskontrollert portalresultat. '+updated['classification']
                 captured=datetime.now(timezone.utc).isoformat()
                 records.append({'label':str(label),'path':str(path),'url':snapshot.get('url',''),'captured_at':captured})
-                updated={**updated,'screenshot':records[0]['path'],'screenshots':list(records),'captured_at':captured,'identity_verified':True}
+                updated={**updated,'screenshot':records[0]['path'],'screenshots':list(records),'captured_at':captured,'identity_verified':True,
+                         'capture_complete':False,'screenshot_reason':'partial_capture','screenshot_error':'Bildeuttaket er ikke fullført.'}
                 path=None
                 from .evidence_store import EvidenceStore
                 EvidenceStore(self.data_dir).save(variant,{'provider':provider,'checked_at':captured,**updated})
             updated.pop('screenshot_error',None);updated.pop('screenshot_reason',None)
+            updated['capture_complete']=bool(records)
+            if records:EvidenceStore(self.data_dir).save(variant,{'provider':provider,'checked_at':captured,**updated})
             return updated
+        except CaptureViewError as error:
+            if path is not None:path.unlink(missing_ok=True)
+            return self._capture_error(updated,'partial_capture' if records else 'capture_failed',str(error))
         except (OSError,ValueError,RuntimeError,TimeoutError):
             if path is not None:path.unlink(missing_ok=True)
             return self._capture_error(updated,'partial_capture' if records else 'capture_failed','Noen databasebilder mangler. Prøv «Hent bilder fra åpne sider» når siden er ferdig.' if records else 'Databasebildet kunne ikke hentes. Prøv «Hent bilder fra åpne sider» når siden er ferdig.')
@@ -800,6 +856,10 @@ class PortalBrowser:
         valid=(cls._public_identity(provider,variant,snapshot) if provider in PUBLIC_HOSTS
                else parse_portal_snapshot(provider,variant,snapshot).get('identity_verified') is True)
         if not valid:return 'identity_mismatch','Siden bekrefter ikke valgt GRCh37-allel. Åpne riktig variant og velg «Hent bilder fra åpne sider».'
+        if provider not in PUBLIC_HOSTS:
+            parsed=parse_portal_snapshot(provider,variant,snapshot)
+            if parsed.get('status') in {'not_found','license_required'}:
+                return 'result_unavailable','Siden viser ikke lenger et tilgjengelig varianttreff. Kjør søket igjen.'
         return None
 
     @staticmethod
@@ -840,9 +900,9 @@ class PortalBrowser:
                     parsed=parse_portal_snapshot(provider,variant,snapshot)
                     if parsed.get('status')=='found' and parsed.get('identity_verified') is True:
                         result={**result,**parsed}
-                    elif result.get('status')!='found':return self._capture_error(result,'page_not_ready','Variantresultatet er ikke ferdig. Vent eller kjør oppslaget på nytt.')
-                return self._capture(provider,variant,context,result)
-            if problem[0]=='login_required':break
+                    else:return self._capture_error(result,'page_not_ready','Variantresultatet er ikke ferdig. Vent eller kjør oppslaget på nytt.')
+                return self._finish_result(provider,variant,self._capture(provider,variant,context,result))
+            if problem[0] in {'login_required','result_unavailable'}:break
             if provider=='clinvar' and problem[0]=='identity_mismatch' and not expansion_attempted:
                 expected=_clinvar_record_path(result.get('url',''))
                 if expected and expected==_clinvar_record_path(snapshot.get('url','')) and hasattr(context,'expand_clinvar_hgvs'):
@@ -853,19 +913,37 @@ class PortalBrowser:
             time.sleep(.5)
         return self._capture_error(result,*(problem or ('page_not_ready','Databasesiden ble ikke ferdig. Prøv «Hent bilder fra åpne sider».')))
 
+    def _finish_result(self,provider,variant,result):
+        """Release only a completed search, after its final receipt is durable."""
+        if result.get('status')=='found' and result.get('capture_complete') is True and result.get('screenshot') and not result.get('screenshot_error'):
+            from .evidence_store import EvidenceStore
+            try:EvidenceStore(self.data_dir).save(variant,{'provider':provider,'checked_at':datetime.now(timezone.utc).isoformat(),**result})
+            except OSError:return self._capture_error(result,'storage_failed','Databasebildene kunne ikke lagres lokalt. Kontroller datamappen.')
+            confirmation=self._confirmations.get(provider)
+            self._discard(provider)
+            if confirmation:self._confirmations[provider]=(None,confirmation[1])
+        return result
+
     def recapture_result(self,provider,variant,result):
         """Resume capture after manual login/checks without navigating away.
 
         An API/text result stays intact. Never launch a browser implicitly or
         move the page the user just prepared; capture only this exact allele.
         """
+        if not self._result_matches(provider,variant,result):
+            return self._capture_error(result,'identity_mismatch','Databaseresultatet tilhører ikke valgt GRCh37-allel. Kjør oppslaget igjen.')
+        if result.get('status')=='found' and result.get('capture_complete') is True and result.get('screenshot') and not result.get('screenshot_error'):
+            from .workflow import allele_key
+            root=(self.data_dir/'evidence/databases'/allele_key(variant)).resolve()
+            pictures=[r.get('path') for r in result.get('screenshots',[]) if isinstance(r,dict)] or [result['screenshot']]
+            try:
+                if all(Path(p).resolve().is_relative_to(root) and Path(p).is_file() for p in pictures):return result
+            except (OSError,ValueError,TypeError):pass
         if provider=='mtbp':
-            return result if result.get('screenshot') else self._capture_error(result,'resume_analysis','Bruk «Søk i databaser» for å hente samme MTBP-analyse og bildet.')
+            return self._capture_error(result,'resume_analysis','Bruk «Søk i databaser» for å hente samme MTBP-analyse og bildet.')
         resumable=(provider in {'franklin','oncokb'} and result.get('status') in {'login_required','error'})
         if provider not in PORTAL_HOSTS or provider=='mtbp' or (result.get('status')!='found' and not resumable):
             return self._capture_error(result,'capture_unsupported','Ingen identitetskontrollert variant klar for bildeuttak.')
-        if not self._result_matches(provider,variant,result):
-            return self._capture_error(result,'identity_mismatch','Databaseresultatet tilhører ikke valgt GRCh37-allel. Kjør oppslaget igjen.')
         with self._locks[provider]:
             context=self._contexts.get(provider)
             if context is None:return self._capture_error(result,'window_closed','Appens databasevindu er lukket. Åpne kilden, vis varianten og velg «Hent bilder fra åpne sider».')
@@ -889,17 +967,20 @@ class PortalBrowser:
     def lookup(self,provider,variant,*,settings=None):
         if provider=='mtbp':
             from .mtbp import lookup_mtbp
-            with self._locks[provider]:return lookup_mtbp(self,variant,settings or {})
+            with self._locks[provider]:return self._finish_result(provider,variant,lookup_mtbp(self,variant,settings or {}))
         if provider not in ('franklin','oncokb'):return {'status':'unsupported','summary':'Ingen portaloppslagsadapter for denne kilden.'}
         settings=settings or {}
         with self._locks[provider]:
             context=self._context(provider)
             # OncoKB also serves anonymous result pages. A valid public page
             # must not silently replace an explicitly saved account workflow.
-            if provider=='oncokb' and self._has_saved_account(provider) and self.status(provider).get('status')!='logged_in':
+            if self._has_saved_account(provider) and self.status(provider).get('status')!='logged_in':
                 context.navigate(LOGIN_URLS[provider])
                 if not self._saved_login(provider,context):
-                    return {'status':'login_required','identity':canonical_identity(variant),'summary':'OncoKB-innloggingen kunne ikke bekreftes. Kontroller lagret konto eller fullfør innlogging i Edge.'}
+                    rejected=self.status(provider).get('reason')=='credentials_rejected'
+                    name='OncoKB' if provider=='oncokb' else 'Franklin'
+                    message=name+' avviser lagret e-post/passord. Oppdater innloggingen under Innstillinger.' if rejected else name+'-innloggingen kunne ikke bekreftes. Kontroller lagret konto eller fullfør innlogging i Edge.'
+                    return {'status':'login_required','identity':canonical_identity(variant),'summary':message}
             if provider=='franklin':
                 url='https://franklin.genoox.com/clinical-db/home'
             elif provider=='oncokb':url='https://www.oncokb.org/hgvsg/'+quote(genomic_hgvs(variant),safe=':>')+'?refGenome=GRCh37'

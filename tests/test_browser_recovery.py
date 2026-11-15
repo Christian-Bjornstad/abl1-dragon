@@ -340,6 +340,74 @@ class RecoveryTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError): browser_module._clear_stale_endpoint(self.root)
                     self.assertEqual(marker.read_text(), data)
 
+    def test_close_waits_for_owned_process_and_endpoint_before_releasing_profile(self):
+        context = _EdgeContext.__new__(_EdgeContext)
+        context.profile = self.root
+        context._port_file = self.root / 'DevToolsActivePort'
+        events = []
+        context._connection = Mock()
+        context._connection.call.side_effect = lambda *a, **k: events.append('browser-close')
+        context._connection.close.side_effect = lambda: events.append('socket-close')
+        context._process = Mock()
+        waits = iter([subprocess.TimeoutExpired('owned-edge', 5), subprocess.TimeoutExpired('owned-edge', 3), 0])
+        def wait(**kwargs):
+            events.append('process-wait')
+            value = next(waits)
+            if isinstance(value, BaseException): raise value
+            return value
+        context._process.wait.side_effect = wait
+        context._process.terminate.side_effect = lambda: events.append('owned-terminate')
+        context._process.kill.side_effect = lambda: events.append('owned-kill')
+        context._lease = Mock()
+        context._lease.close.side_effect = lambda: events.append('lease-close')
+        context._startup_stderr = Mock()
+        checks = iter([RuntimeError('still closing'), RuntimeError('inconclusive'), None])
+        def clear(profile):
+            self.assertEqual(profile, self.root)
+            events.append('endpoint-check')
+            value = next(checks)
+            if value: raise value
+        with patch.object(browser_module, '_clear_stale_endpoint', side_effect=clear), patch.object(browser_module.time, 'sleep'):
+            context.close()
+        self.assertEqual(events, ['browser-close', 'socket-close', 'process-wait', 'owned-terminate',
+                                  'process-wait', 'owned-kill', 'process-wait',
+                                  'endpoint-check', 'endpoint-check', 'endpoint-check', 'lease-close'])
+        self.assertIsNone(context._process)
+        self.assertIsNone(context._lease)
+
+    def test_close_releases_profile_even_when_owned_process_wait_fails(self):
+        context = _EdgeContext.__new__(_EdgeContext)
+        context.profile = self.root
+        context._connection = None
+        context._process = Mock()
+        context._process.wait.side_effect = OSError('process handle unavailable')
+        lease = context._lease = Mock()
+        stderr = context._startup_stderr = Mock()
+        context.close()
+        lease.close.assert_called_once()
+        stderr.close.assert_called_once()
+        context.close()
+        lease.close.assert_called_once()
+
+    def test_close_preserves_uncertain_endpoint_and_never_targets_another_browser(self):
+        context = _EdgeContext.__new__(_EdgeContext)
+        context.profile = self.root
+        context._port_file = self.root / 'DevToolsActivePort'
+        context._port_file.write_text('12345\n/devtools/browser/12345678-abcd-1234-abcd-123456789012\n')
+        context._connection = None
+        process = context._process = Mock()
+        process.wait.return_value = 0
+        lease = context._lease = Mock()
+        context._startup_stderr = None
+        with patch.object(browser_module, '_clear_stale_endpoint', side_effect=RuntimeError('inconclusive')), \
+             patch.object(browser_module.time, 'monotonic', side_effect=[0, 0, 9]), \
+             patch.object(browser_module.time, 'sleep'):
+            context.close()
+        self.assertTrue(context._port_file.exists())
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
+        lease.close.assert_called_once()
+
     @unittest.skipUnless(sys.platform == 'win32', 'Windows owned Edge launcher')
     def test_owned_launch_disables_browser_account_sync_without_changing_site_security(self):
         process = Mock(); process.poll.return_value = 23
