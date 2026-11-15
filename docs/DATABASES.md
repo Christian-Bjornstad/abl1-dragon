@@ -33,10 +33,10 @@ i kildesvaret når teksten finnes i rapporten.
 ## Verifisert under utviklingen
 
 - 15. november 2026: ClinVar ga fem bilder og OncoKB tre, med automatisk
-  lukking etter lokal lagring. Franklin ga alle 18 bilder fra den offentlige
-  Thr315Ile-siden. Den lagrede Franklin-innloggingen ble avvist av nettstedet;
-  innlogget tilgang er derfor ikke bekreftet i denne testen. Appen viser nå
-  avvist innlogging og går ikke videre anonymt når en konto er lagret.
+  lukking etter lokal lagring. Etter korrigering av det lagrede Franklin-passordet
+  ble innlogging bekreftet fra konto-/organisasjonsfeltet på nettstedet.
+  Innlogget Thr315Ile-oppslag ga 18 bilder, kontrollert innebygd i Excel.
+  Appen viser avvist innlogging og går ikke videre anonymt når en konto er lagret.
 - MTBP: offentlig Met244Val ga ett lesbart variantbilde og automatisk lukking.
   Ny Edge-oppstart hentet samme analyse uten ny innsending. Excel-bilder og
   arknavn ble kontrollert for disse oppslagene. Ingen pasientfiler ble sendt.
